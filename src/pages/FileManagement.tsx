@@ -1,0 +1,610 @@
+import { useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import {
+    FolderOpen, Plus, Search, RefreshCw, Eye, ChevronRight,
+    CheckCircle2, RotateCcw, XCircle, Send, AlertCircle, Clock, Archive, GitBranch,
+    FileText, Upload, Download, Trash2, Paperclip
+} from "lucide-react";
+import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document } from "@/lib/types";
+
+const statusConfig: Record<FileStatus, { label: string; color: string; icon: any }> = {
+    PENDING: { label: "Pending", color: "bg-yellow-100 text-yellow-800", icon: Clock },
+    FORWARDED: { label: "Forwarded", color: "bg-blue-100 text-blue-800", icon: Send },
+    APPROVED: { label: "Approved", color: "bg-green-100 text-green-800", icon: CheckCircle2 },
+    RETURNED: { label: "Returned", color: "bg-orange-100 text-orange-800", icon: RotateCcw },
+    REJECTED: { label: "Rejected", color: "bg-red-100 text-red-800", icon: XCircle },
+    CLOSED: { label: "Closed", color: "bg-slate-100 text-slate-700", icon: Archive },
+    ARCHIVED: { label: "Archived", color: "bg-purple-100 text-purple-800", icon: Archive },
+    DISPOSED: { label: "Disposed", color: "bg-gray-100 text-gray-600", icon: Archive },
+};
+
+const FileManagement = () => {
+    const { user, isApprover } = useAuth();
+    const [files, setFiles] = useState<FileRecord[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [statusFilter, setStatusFilter] = useState("ALL");
+    const [search, setSearch] = useState("");
+    const [selected, setSelected] = useState<FileRecord | null>(null);
+    const [movements, setMovements] = useState<FileMovement[]>([]);
+    const [documents, setDocuments] = useState<Document[]>([]);
+    const [showCreate, setShowCreate] = useState(false);
+    const [showAction, setShowAction] = useState<string | null>(null);
+    const [departments, setDepartments] = useState<Department[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
+    const [workflowCategories, setWorkflowCategories] = useState<WorkflowCategory[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [actionForm, setActionForm] = useState({ toUserId: "", remarks: "" });
+    const [createForm, setCreateForm] = useState({ subject: "", description: "", classification: "Internal", departmentId: "", workflowCategoryId: "" });
+    const [submitting, setSubmitting] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState("");
+
+    const fetchFiles = async () => {
+        setLoading(true);
+        try {
+            const res = await filesApi.list({ status: statusFilter === "ALL" ? undefined : statusFilter, search });
+            const data = res.data;
+            setFiles(Array.isArray(data) ? data : data.data || []);
+        } catch { setFiles([]); } finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetchFiles(); }, [statusFilter, search]);
+
+    useEffect(() => {
+        departmentsApi.list().then(r => setDepartments(r.data)).catch(() => { });
+        usersApi.list().then(r => { const d = r.data; setUsers(Array.isArray(d) ? d : d.data || []); }).catch(() => { });
+        workflowApi.listCategories().then(r => setWorkflowCategories(Array.isArray(r.data) ? r.data : [])).catch(() => { });
+    }, []);
+
+    const openFile = async (file: FileRecord) => {
+        setSelected(file);
+        try {
+            const [movRes, docRes] = await Promise.all([
+                filesApi.getMovements(file.id),
+                documentsApi.findByFile(file.id)
+            ]);
+            setMovements(movRes.data);
+            setDocuments(Array.isArray(docRes.data) ? docRes.data : []);
+        } catch {
+            setMovements([]);
+            setDocuments([]);
+        }
+    };
+
+    const handleCreate = async (e: React.FormEvent) => {
+        e.preventDefault(); setSubmitting(true); setError("");
+        try {
+            const payload = { ...createForm };
+            if (!payload.workflowCategoryId) delete (payload as any).workflowCategoryId;
+
+            await filesApi.create(payload);
+            toast.success("File created successfully");
+            setShowCreate(false);
+            setCreateForm({ subject: "", description: "", classification: "Internal", departmentId: "", workflowCategoryId: "" });
+            fetchFiles();
+        } catch (err: any) { setError(err?.response?.data?.message || "Failed to create file"); }
+        finally { setSubmitting(false); }
+    };
+
+    const handleAction = async (e: React.FormEvent) => {
+        e.preventDefault(); if (!selected || !showAction) return;
+        setSubmitting(true); setError("");
+        try {
+            // Check if file is in advanced workflow
+            if (selected.workflowCategoryId && (showAction === 'approve' || showAction === 'reject' || showAction === 'return')) {
+                await workflowApi.processAction(selected.id, {
+                    status: showAction === 'approve' ? 'APPROVED' : showAction === 'reject' ? 'REJECTED' : 'RETURNED',
+                    comments: actionForm.remarks
+                });
+            } else {
+                // Standard actions
+                const payload = { ...actionForm };
+                if (showAction === "forward") await filesApi.forward(selected.id, payload);
+                else if (showAction === "approve") await filesApi.approve(selected.id, payload);
+                else if (showAction === "return") await filesApi.return(selected.id, payload);
+                else if (showAction === "reject") await filesApi.reject(selected.id, payload);
+            }
+
+
+
+            toast.success(`File ${showAction === 'return' ? 'returned' : showAction + 'd'} successfully`);
+            setShowAction(null); setActionForm({ toUserId: "", remarks: "" });
+
+            // Refresh
+            const updated = await filesApi.get(selected.id);
+            setSelected(updated.data);
+            const [movRes, docRes] = await Promise.all([
+                filesApi.getMovements(selected.id),
+                documentsApi.findByFile(selected.id)
+            ]);
+            setMovements(movRes.data);
+            setDocuments(Array.isArray(docRes.data) ? docRes.data : []);
+            fetchFiles();
+        } catch (err: any) { setError(err?.response?.data?.message || "Action failed"); }
+        finally { setSubmitting(false); }
+    };
+
+    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || !e.target.files[0] || !selected) return;
+        const file = e.target.files[0];
+        setUploading(true);
+        setError("");
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('fileId', selected.id);
+            formData.append('description', 'Uploaded via File Manager');
+
+            await documentsApi.upload(formData);
+
+            // Refresh documents
+            const res = await documentsApi.findByFile(selected.id);
+            setDocuments(Array.isArray(res.data) ? res.data : []);
+
+            if (fileInputRef.current) fileInputRef.current.value = "";
+        } catch (err: any) {
+            setError(err?.response?.data?.message || "Upload failed");
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleDownload = async (doc: Document) => {
+        try {
+            const res = await documentsApi.download(doc.id);
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', doc.originalName || doc.name || 'document');
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch {
+            // Error handling
+        }
+    };
+
+    const handleDeleteDocument = async (id: string) => {
+        if (!selected) return;
+        if (!confirm("Are you sure you want to delete this document?")) return;
+        try {
+            await documentsApi.delete(id);
+            const res = await documentsApi.findByFile(selected.id);
+            setDocuments(Array.isArray(res.data) ? res.data : []);
+        } catch (err: any) {
+            alert("Failed to delete document");
+        }
+    };
+
+    const StatusBadge = ({ status }: { status: FileStatus }) => {
+        const cfg = statusConfig[status] || statusConfig.PENDING;
+        return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.color} flex items-center gap-1 w-fit`}>
+            {status === 'APPROVED' && <CheckCircle2 className="w-3 h-3" />}
+            {cfg.label}
+        </span>;
+    };
+
+    const actionLabels: Record<string, string> = {
+        forward: "Forward File", approve: "Approve File", return: "Return File", reject: "Reject File"
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight">File Management</h1>
+                    <p className="text-muted-foreground text-sm mt-1">Create, track, and manage files through the approval workflow</p>
+                </div>
+                <Button onClick={() => setShowCreate(true)} className="gap-2">
+                    <Plus className="w-4 h-4" /> Create File
+                </Button>
+            </div>
+
+            {/* Filters */}
+            <Card className="shadow-card">
+                <CardContent className="p-4">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input placeholder="Search files..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        </div>
+                        <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+                            <TabsList>
+                                <TabsTrigger value="ALL">All</TabsTrigger>
+                                <TabsTrigger value="PENDING">Pending</TabsTrigger>
+                                <TabsTrigger value="FORWARDED">Forwarded</TabsTrigger>
+                                <TabsTrigger value="APPROVED">Approved</TabsTrigger>
+                                <TabsTrigger value="RETURNED">Returned</TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+                        <Button variant="outline" size="icon" onClick={fetchFiles}><RefreshCw className="w-4 h-4" /></Button>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* File List */}
+            <Card className="shadow-card">
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-lg font-sans flex items-center gap-2">
+                        <FolderOpen className="w-5 h-5 text-primary" /> Files
+                        <Badge variant="secondary" className="ml-2">{files.length}</Badge>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {loading ? (
+                        <div className="flex items-center justify-center py-12 text-muted-foreground">
+                            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
+                        </div>
+                    ) : files.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground">
+                            <FolderOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                            <p>No files found</p>
+                            <Button variant="outline" size="sm" className="mt-3" onClick={() => setShowCreate(true)}>Create First File</Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {files.map((file) => (
+                                <div key={file.id}
+                                    className="flex items-center justify-between p-4 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors cursor-pointer"
+                                    onClick={() => openFile(file)}>
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                                            <FolderOpen className="w-5 h-5 text-primary" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <p className="font-medium text-sm truncate">{file.subject}</p>
+                                                {file.workflowCategory && <Badge variant="outline" className="text-[10px] h-5">{file.workflowCategory.name}</Badge>}
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                {file.fileNumber} · {file.department?.name || "—"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <StatusBadge status={file.status} />
+                                        {file.currentStage && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">Stage {file.currentStage.stageOrder}</span>}
+                                        <span className="text-xs text-muted-foreground hidden sm:block">
+                                            {new Date(file.createdAt).toLocaleDateString()}
+                                        </span>
+                                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* File Detail Dialog */}
+            <Dialog open={!!selected} onOpenChange={() => { setSelected(null); setMovements([]); setDocuments([]); }}>
+                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto flex flex-col p-0 gap-0">
+                    <div className="p-6 pb-2">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-xl">
+                                <FolderOpen className="w-6 h-6 text-primary" />
+                                <span className="truncate">{selected?.fileNumber}</span>
+                            </DialogTitle>
+                            <p className="text-sm text-muted-foreground">{selected?.subject}</p>
+                        </DialogHeader>
+
+                        {selected?.workflowCategory && (
+                            <div className="mt-4 bg-slate-50 border rounded-lg p-3 flex justify-between items-center">
+                                <div>
+                                    <p className="text-xs text-muted-foreground uppercase font-semibold">Workflow</p>
+                                    <p className="font-medium text-sm">{selected.workflowCategory.name}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xs text-muted-foreground uppercase font-semibold">Current Stage</p>
+                                    {selected.currentStage ? (
+                                        <div className="flex items-center gap-1.5 justify-end">
+                                            <Badge variant="secondary">Stage {selected.currentStage.stageOrder}</Badge>
+                                            <span className="text-sm font-medium">{selected.currentStage.role}</span>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-green-600 font-medium">Completed</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <Tabs defaultValue="overview" className="flex-1 overflow-hidden flex flex-col">
+                        <div className="px-6 border-b">
+                            <TabsList className="w-full justify-start h-12 bg-transparent p-0">
+                                <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Overview</TabsTrigger>
+                                <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Documents <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{documents.length}</Badge></TabsTrigger>
+                                <TabsTrigger value="history" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">History</TabsTrigger>
+                            </TabsList>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <TabsContent value="overview" className="mt-0 space-y-6">
+                                {/* Metadata */}
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Status</p>{selected && <StatusBadge status={selected.status} />}</div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{selected?.department?.name}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Created By</p><p className="font-medium">{selected?.createdBy?.firstName} {selected?.createdBy?.lastName}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "—"} {selected?.currentOwner?.lastName}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Classification</p><p className="font-medium">{selected?.classification}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Created Date</p><p className="font-medium">{selected && new Date(selected.createdAt).toLocaleDateString()}</p></div>
+                                </div>
+
+                                {selected?.description && (
+                                    <div className="space-y-2">
+                                        <Label>Description</Label>
+                                        <div className="text-sm bg-muted/30 p-3 rounded-md border text-foreground/80 leading-relaxed">
+                                            {selected.description}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <Separator />
+
+                                {/* Action Buttons */}
+                                {(selected?.status === "PENDING" || selected?.status === "FORWARDED") && (
+                                    <div>
+                                        <p className="text-sm font-medium mb-3">Available Actions</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {(!selected.currentStage) && (
+                                                <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
+                                                    onClick={() => { setShowAction("forward"); setError(""); }}>
+                                                    <Send className="w-3.5 h-3.5" /> Forward
+                                                </Button>
+                                            )}
+                                            {isApprover && selected.currentStage && selected.currentStage.role === user?.role && (
+                                                <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-200 hover:bg-green-50"
+                                                    onClick={() => { setShowAction("approve"); setError(""); }}>
+                                                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                                                </Button>
+                                            )}
+                                            <Button size="sm" variant="outline" className="gap-1 text-orange-700 border-orange-200 hover:bg-orange-50"
+                                                onClick={() => { setShowAction("return"); setError(""); }}>
+                                                <RotateCcw className="w-3.5 h-3.5" /> Return
+                                            </Button>
+                                            {isApprover && selected.currentStage && selected.currentStage.role === user?.role && (
+                                                <Button size="sm" variant="outline" className="gap-1 text-red-700 border-red-200 hover:bg-red-50"
+                                                    onClick={() => { setShowAction("reject"); setError(""); }}>
+                                                    <XCircle className="w-3.5 h-3.5" /> Reject
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </TabsContent>
+
+                            <TabsContent value="documents" className="mt-0">
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <h3 className="text-sm font-medium">Attached Documents</h3>
+                                        <div>
+                                            <input
+                                                type="file"
+                                                ref={fileInputRef}
+                                                className="hidden"
+                                                onChange={handleUpload}
+                                            />
+                                            <Button size="sm" variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                                                {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                Upload Document
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+
+                                    {documents.length === 0 ? (
+                                        <div className="border border-dashed rounded-lg p-8 text-center text-muted-foreground">
+                                            <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                                            <p>No documents attached</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {documents.map((doc) => (
+                                                <div key={doc.id} className="flex items-center justify-between p-3 bg-card border rounded-md hover:bg-muted/30">
+                                                    <div className="flex items-center gap-3 overflow-hidden">
+                                                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                                                            <FileText className="w-4 h-4 text-primary" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                {(doc.size / 1024).toFixed(1)} KB · v{doc.version} · {new Date(doc.createdAt).toLocaleDateString()}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                                            onClick={() => handleDownload(doc)} title="Download">
+                                                            <Download className="w-4 h-4" />
+                                                        </Button>
+                                                        {selected?.status === 'PENDING' && (
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                                onClick={() => handleDeleteDocument(doc.id)} title="Delete">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="history" className="mt-0 space-y-6">
+                                {/* Workflow History */}
+                                {selected?.approvals && selected.approvals.length > 0 && (
+                                    <div>
+                                        <p className="text-sm font-medium mb-3 flex items-center gap-2"><GitBranch className="w-4 h-4" /> Workflow Approval Log</p>
+                                        <div className="space-y-3 pl-2 border-l-2 border-primary/20">
+                                            {selected.approvals.map((approval) => (
+                                                <div key={approval.id} className="relative pl-4">
+                                                    <div className="absolute -left-[9px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-background bg-primary/20" />
+                                                    <div className="flex justify-between items-start text-sm">
+                                                        <div>
+                                                            <p className="font-medium">Stage {approval.stage?.stageOrder} - {approval.stage?.role}</p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Status: <span className={
+                                                                    approval.status === 'APPROVED' ? 'text-green-600' :
+                                                                        approval.status === 'REJECTED' ? 'text-red-600' : 'text-orange-600'
+                                                                }>{approval.status}</span>
+                                                            </p>
+                                                            {approval.comments && <p className="text-xs mt-1 italic">"{approval.comments}"</p>}
+                                                        </div>
+                                                        {approval.actionDate && <span className="text-xs text-muted-foreground">{new Date(approval.actionDate).toLocaleDateString()}</span>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <Separator className="my-4" />
+                                    </div>
+                                )}
+
+                                {/* Movement Trail */}
+                                <div>
+                                    <p className="text-sm font-medium mb-3">Audit Trail (File Movements)</p>
+                                    {movements.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">No movements recorded yet.</p>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {movements.map((m, i) => (
+                                                <div key={m.id} className="flex gap-3">
+                                                    <div className="flex flex-col items-center">
+                                                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">{i + 1}</div>
+                                                        {i < movements.length - 1 && <div className="w-0.5 h-6 bg-border mt-1" />}
+                                                    </div>
+                                                    <div className="pb-2 min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-xs font-medium">{m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System"}</span>
+                                                            <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                                                            <span className="text-xs font-medium">{m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—"}</span>
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-medium ${m.action === "APPROVE" ? "bg-green-50 text-green-700" :
+                                                                m.action === "RETURN" ? "bg-orange-50 text-orange-700" :
+                                                                    m.action === "REJECT" ? "bg-red-50 text-red-700" :
+                                                                        "bg-blue-50 text-blue-700"}`}>{m.action}</span>
+                                                        </div>
+                                                        {m.remarks && <p className="text-xs text-muted-foreground mt-0.5">{m.remarks}</p>}
+                                                        <p className="text-[10px] text-muted-foreground">{new Date(m.createdAt).toLocaleString()}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </TabsContent>
+                        </div>
+                    </Tabs>
+                    <DialogFooter className="p-4 border-t bg-muted/20">
+                        <Button variant="outline" onClick={() => { setSelected(null); setMovements([]); setDocuments([]); }}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Create File Dialog */}
+            <Dialog open={showCreate} onOpenChange={setShowCreate}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader><DialogTitle>Create New File</DialogTitle></DialogHeader>
+                    <form onSubmit={handleCreate} className="space-y-4">
+                        {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+                        <div className="space-y-2">
+                            <Label>Subject *</Label>
+                            <Input required value={createForm.subject} onChange={(e) => setCreateForm({ ...createForm, subject: e.target.value })} placeholder="File subject" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                                <Label>Department</Label>
+                                <Select value={createForm.departmentId} onValueChange={(v) => setCreateForm({ ...createForm, departmentId: v })}>
+                                    <SelectTrigger><SelectValue placeholder="Select dept." /></SelectTrigger>
+                                    <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Classification</Label>
+                                <Select value={createForm.classification} onValueChange={(v) => setCreateForm({ ...createForm, classification: v })}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Internal">Internal</SelectItem>
+                                        <SelectItem value="Confidential">Confidential</SelectItem>
+                                        <SelectItem value="Public">Public</SelectItem>
+                                        <SelectItem value="Restricted">Restricted</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Workflow Category (Optional)</Label>
+                            <Select value={createForm.workflowCategoryId || "no_workflow"} onValueChange={(v) => setCreateForm({ ...createForm, workflowCategoryId: v === "no_workflow" ? "" : v })}>
+                                <SelectTrigger><SelectValue placeholder="Select workflow category" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="no_workflow">None (Standard)</SelectItem>
+                                    {workflowCategories.map(wc => <SelectItem key={wc.id} value={wc.id}>{wc.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Selecting a workflow triggers staged approvals.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Description</Label>
+                            <Textarea value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} placeholder="Brief description..." rows={3} />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
+                            <Button type="submit" disabled={submitting}>{submitting ? "Creating..." : "Create File"}</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Action Dialog */}
+            <Dialog open={!!showAction} onOpenChange={() => setShowAction(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader><DialogTitle>{showAction ? actionLabels[showAction] : ""}</DialogTitle></DialogHeader>
+                    <form onSubmit={handleAction} className="space-y-4">
+                        {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+
+                        {/* Show forward user select if it's a forward action OR if it's a standard file action (approve/return/reject) which requires a target user */}
+                        {((showAction === "forward") || (!selected?.workflowCategoryId && ["approve", "return", "reject"].includes(showAction || ""))) && (
+                            <div className="space-y-2">
+                                <Label>{showAction === "return" ? "Return To *" : "Assign To *"}</Label>
+                                <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
+                                    <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
+                                    <SelectContent>
+                                        {users.filter(u => u.id !== user?.id).map(u => (
+                                            <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label>Remarks</Label>
+                            <Textarea value={actionForm.remarks} onChange={(e) => setActionForm({ ...actionForm, remarks: e.target.value })} placeholder="Add remarks..." rows={3} />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" type="button" onClick={() => setShowAction(null)}>Cancel</Button>
+                            <Button type="submit" disabled={submitting}>{submitting ? "Processing..." : "Confirm"}</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+};
+
+export default FileManagement;

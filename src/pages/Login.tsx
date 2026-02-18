@@ -4,35 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Shield, Lock, AlertCircle, Loader2 } from "lucide-react";
-import { authApi, type Role } from "@/lib/api";
-
-const ROLE_OPTIONS: { value: Role; label: string }[] = [
-  { value: "ADMIN", label: "Administrator" },
-  { value: "OFFICER", label: "Officer (Applicant)" },
-  { value: "ASSISTANT", label: "Assistant" },
-  { value: "SUPERVISOR", label: "Supervisor (Approver)" },
-  { value: "DEPT_HEAD", label: "Department Head (Final Approver)" },
-];
+import { authApi } from "@/lib/api";
 
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Role | "">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!role) return;
-
     setLoading(true);
     setError("");
 
     try {
-      const { data } = await authApi.login(email, password, role);
+      const { data } = await authApi.login(email, password);
 
       // Persist tokens and user info
       localStorage.setItem("access_token", data.accessToken);
@@ -147,23 +135,7 @@ const Login = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="role">Login As</Label>
-                  <Select value={role} onValueChange={(v) => setRole(v as Role)} disabled={loading}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select your role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROLE_OPTIONS.map((r) => (
-                        <SelectItem key={r.value} value={r.value}>
-                          {r.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button type="submit" className="w-full" size="lg" disabled={loading || !role}>
+                <Button type="submit" className="w-full" size="lg" disabled={loading}>
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
