@@ -5,20 +5,49 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Shield, Lock } from "lucide-react";
+import { FileText, Shield, Lock, AlertCircle, Loader2 } from "lucide-react";
+import { authApi, type Role } from "@/lib/api";
+
+const ROLE_OPTIONS: { value: Role; label: string }[] = [
+  { value: "ADMIN", label: "Administrator" },
+  { value: "OFFICER", label: "Officer (Applicant)" },
+  { value: "ASSISTANT", label: "Assistant" },
+  { value: "SUPERVISOR", label: "Supervisor (Approver)" },
+  { value: "DEPT_HEAD", label: "Department Head (Final Approver)" },
+];
 
 const Login = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("");
+  const [role, setRole] = useState<Role | "">("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login for now — will integrate with backend auth later
-    if (email && password && role) {
-      localStorage.setItem("dms_user", JSON.stringify({ email, role }));
+    if (!role) return;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const { data } = await authApi.login(email, password, role);
+
+      // Persist tokens and user info
+      localStorage.setItem("access_token", data.accessToken);
+      localStorage.setItem("refresh_token", data.refreshToken);
+      localStorage.setItem("session_id", data.sessionId);
+      localStorage.setItem("dms_user", JSON.stringify(data.user));
+
       navigate("/dashboard");
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        "Login failed. Please check your credentials.";
+      setError(Array.isArray(message) ? message.join(", ") : message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -82,6 +111,13 @@ const Login = () => {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleLogin} className="space-y-4">
+                {error && (
+                  <div className="flex items-center gap-2 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {error}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
                   <Input
@@ -91,6 +127,7 @@ const Login = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
+                    disabled={loading}
                   />
                 </div>
 
@@ -104,6 +141,7 @@ const Login = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
+                      disabled={loading}
                     />
                     <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   </div>
@@ -111,22 +149,29 @@ const Login = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="role">Login As</Label>
-                  <Select value={role} onValueChange={setRole} required>
+                  <Select value={role} onValueChange={(v) => setRole(v as Role)} disabled={loading}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select your role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Administrator</SelectItem>
-                      <SelectItem value="officer">Officer</SelectItem>
-                      <SelectItem value="assistant">Assistant</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
-                      <SelectItem value="dept_head">Department Head</SelectItem>
+                      {ROLE_OPTIONS.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                <Button type="submit" className="w-full" size="lg">
-                  Sign In
+                <Button type="submit" className="w-full" size="lg" disabled={loading || !role}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    "Sign In"
+                  )}
                 </Button>
 
                 <p className="text-center text-xs text-muted-foreground mt-4">
