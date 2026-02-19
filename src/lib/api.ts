@@ -141,3 +141,13 @@ export const workflowApi = {
     processAction: (fileId: string, data: { status: 'APPROVED' | 'REJECTED' | 'RETURNED'; comments?: string }) =>
         api.post(`/workflow/files/${fileId}/action`, data),
 };
+// ── Classifications ────────────────────────────────────────────────────────────
+export const classificationsApi = {
+    list: () => api.get('/classifications'),
+    get: (id: string) => api.get(`/classifications/${id}`),
+    create: (data: any) => api.post('/classifications', data),
+    update: (id: string, data: any) => api.patch(`/classifications/${id}`, data),
+    delete: (id: string) => api.delete(`/classifications/${id}`),
+    setRoutes: (id: string, routes: { userId: string; order: number }[]) =>
+        api.post(`/classifications/${id}/routes`, { routes }),
+};

@@ -13,6 +13,7 @@ import WorkflowTracking from "./pages/WorkflowTracking";
 import ArchiveManagement from "./pages/ArchiveManagement";
 import ReportsAnalytics from "./pages/ReportsAnalytics";
 import AdminSettings from "./pages/AdminSettings";
+import ClassificationManagement from "./pages/ClassificationManagement";
 import DashboardLayout from "./components/layout/DashboardLayout";
 import NotFound from "./pages/NotFound";
 
@@ -48,7 +49,9 @@ const App = () => (
             <Route path="workflow" element={<WorkflowTracking />} />
             <Route path="archive" element={<ArchiveManagement />} />
             <Route path="reports" element={<ReportsAnalytics />} />
+            <Route path="users" element={<AdminSettings />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="classifications" element={<ClassificationManagement />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

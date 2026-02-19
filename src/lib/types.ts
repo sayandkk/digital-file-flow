@@ -30,12 +30,20 @@ export interface User {
     createdAt?: string;
 }
 
+export interface Classification {
+    id: string;
+    name: string;
+    type: 'NORMAL' | 'CUSTOM';
+    description?: string;
+}
+
 export interface FileRecord {
     id: string;
     fileNumber: string;
     subject: string;
     description?: string;
-    classification?: string;
+    classification?: Classification;
+    classificationId?: string;
     workflowCategory?: WorkflowCategory;
     workflowCategoryId?: string;
     currentStage?: WorkflowStage;

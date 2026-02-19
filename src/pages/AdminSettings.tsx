@@ -32,7 +32,8 @@ const statusColors: Record<UserStatus, string> = {
 };
 
 const AdminSettings = () => {
-    const { isAdmin } = useAuth();
+    const { isAdmin, user } = useAuth();
+    const isDeptHead = user?.role === "DEPT_HEAD";
     const [users, setUsers] = useState<User[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [workflows, setWorkflows] = useState<WorkflowCategory[]>([]);
@@ -86,22 +87,32 @@ const AdminSettings = () => {
     };
 
     useEffect(() => {
-        if (isAdmin) {
+        if (isAdmin || isDeptHead) {
             fetchUsers();
-            fetchDepts();
+            fetchDepts(); // Needed for dropdown even if disabled
+        }
+        if (isAdmin) {
             fetchWorkflows();
         }
-    }, [isAdmin]);
+    }, [isAdmin, isDeptHead]);
 
     // --- Handlers ---
     const handleUserSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setSubmitting(true); setError("");
         try {
+            const payload = { ...userForm };
+            // Sanitize optional fields to avoid unique constraint violations on empty strings
+            if (!payload.departmentId) delete (payload as any).departmentId;
+            if (!payload.employeeId) delete (payload as any).employeeId;
+            if (!payload.designation) delete (payload as any).designation;
+            // Phone is not in the form state explicitly shown in snippets but if it were, we'd delete it too.
+            // userForm has: email, password, firstName, lastName, role, departmentId, designation, employeeId
+
             if (editingUser) {
-                const { password, ...rest } = userForm;
+                const { password, ...rest } = payload;
                 await usersApi.update(editingUser.id, rest);
             } else {
-                await usersApi.create(userForm);
+                await usersApi.create(payload);
             }
             setShowUserForm(false); setEditingUser(null);
             fetchUsers();
@@ -161,7 +172,7 @@ const AdminSettings = () => {
         catch (err: any) { alert("Failed to remove stage"); }
     };
 
-    if (!isAdmin) {
+    if (!isAdmin && !isDeptHead) {
         return (
             <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
                 <Shield className="w-12 h-12 mb-4 opacity-30" />
@@ -181,9 +192,13 @@ const AdminSettings = () => {
             <Tabs defaultValue="users">
                 <TabsList className="mb-4">
                     <TabsTrigger value="users" className="gap-2"><Users className="w-4 h-4" /> Users</TabsTrigger>
-                    <TabsTrigger value="departments" className="gap-2"><Building2 className="w-4 h-4" /> Departments</TabsTrigger>
-                    <TabsTrigger value="workflows" className="gap-2"><GitBranch className="w-4 h-4" /> Workflows</TabsTrigger>
-                    <TabsTrigger value="system" className="gap-2"><Settings className="w-4 h-4" /> System</TabsTrigger>
+                    {isAdmin && (
+                        <>
+                            <TabsTrigger value="departments" className="gap-2"><Building2 className="w-4 h-4" /> Departments</TabsTrigger>
+                            <TabsTrigger value="workflows" className="gap-2"><GitBranch className="w-4 h-4" /> Workflows</TabsTrigger>
+                            <TabsTrigger value="system" className="gap-2"><Settings className="w-4 h-4" /> System</TabsTrigger>
+                        </>
+                    )}
                 </TabsList>
 
                 {/* ── Users Tab ── */}
@@ -196,7 +211,20 @@ const AdminSettings = () => {
                             </CardTitle>
                             <div className="flex gap-2">
                                 <Button variant="outline" size="icon" onClick={fetchUsers}><RefreshCw className="w-4 h-4" /></Button>
-                                <Button size="sm" className="gap-1" onClick={() => { setEditingUser(null); setUserForm({ email: "", password: "", firstName: "", lastName: "", role: "OFFICER", departmentId: "", designation: "", employeeId: "" }); setShowUserForm(true); }}>
+                                <Button size="sm" className="gap-1" onClick={() => {
+                                    setEditingUser(null);
+                                    setUserForm({
+                                        email: "",
+                                        password: "",
+                                        firstName: "",
+                                        lastName: "",
+                                        role: "OFFICER",
+                                        departmentId: isDeptHead ? (user?.departmentId || "") : "",
+                                        designation: "",
+                                        employeeId: ""
+                                    });
+                                    setShowUserForm(true);
+                                }}>
                                     <Plus className="w-4 h-4" /> Add User
                                 </Button>
                             </div>
@@ -352,11 +380,23 @@ const AdminSettings = () => {
                         {!editingUser && <Input placeholder="Password" type="password" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} required />}
                         <Select value={userForm.role} onValueChange={(v: Role) => setUserForm({ ...userForm, role: v })}>
                             <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
-                            <SelectContent>{Object.entries(roleLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                            <SelectContent>
+                                {Object.entries(roleLabels)
+                                    .filter(([k]) => !isDeptHead || k !== "ADMIN") // Filter ADMIN if Dept Head
+                                    .map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)
+                                }
+                            </SelectContent>
                         </Select>
-                        <Select value={userForm.departmentId || "no_dept"} onValueChange={(v) => setUserForm({ ...userForm, departmentId: v === "no_dept" ? "" : v })}>
+                        <Select
+                            value={isDeptHead ? (user?.departmentId || "") : (userForm.departmentId || "no_dept")}
+                            onValueChange={(v) => setUserForm({ ...userForm, departmentId: v === "no_dept" ? "" : v })}
+                            disabled={isDeptHead}
+                        >
                             <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
-                            <SelectContent><SelectItem value="no_dept">None</SelectItem>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>
+                                <SelectItem value="no_dept">None</SelectItem>
+                                {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                            </SelectContent>
                         </Select>
                         <DialogFooter><Button type="submit" disabled={submitting}>Save</Button></DialogFooter>
                     </form>

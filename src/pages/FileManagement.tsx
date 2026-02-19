@@ -15,7 +15,7 @@ import {
     CheckCircle2, RotateCcw, XCircle, Send, AlertCircle, Clock, Archive, GitBranch,
     FileText, Upload, Download, Trash2, Paperclip
 } from "lucide-react";
-import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi } from "@/lib/api";
+import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi, classificationsApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document } from "@/lib/types";
 
@@ -44,10 +44,17 @@ const FileManagement = () => {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [workflowCategories, setWorkflowCategories] = useState<WorkflowCategory[]>([]);
+    const [classifications, setClassifications] = useState<{ id: string, name: string }[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [actionForm, setActionForm] = useState({ toUserId: "", remarks: "" });
-    const [createForm, setCreateForm] = useState({ subject: "", description: "", classification: "Internal", departmentId: "", workflowCategoryId: "" });
+    const [createForm, setCreateForm] = useState({
+        subject: "",
+        description: "",
+        classificationId: "",
+        departmentId: "",
+        workflowCategoryId: ""
+    });
     const [submitting, setSubmitting] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
@@ -69,6 +76,7 @@ const FileManagement = () => {
         departmentsApi.list().then(r => setDepartments(r.data)).catch(() => { });
         usersApi.list().then(r => { const d = r.data; setUsers(Array.isArray(d) ? d : d.data || []); }).catch(() => { });
         workflowApi.listCategories().then(r => setWorkflowCategories(Array.isArray(r.data) ? r.data : [])).catch(() => { });
+        classificationsApi.list().then(r => setClassifications(r.data)).catch(() => { });
     }, []);
 
     const openFile = async (file: FileRecord) => {
@@ -91,11 +99,18 @@ const FileManagement = () => {
         try {
             const payload = { ...createForm };
             if (!payload.workflowCategoryId) delete (payload as any).workflowCategoryId;
+            if (!payload.classificationId) delete (payload as any).classificationId;
 
             await filesApi.create(payload);
             toast.success("File created successfully");
             setShowCreate(false);
-            setCreateForm({ subject: "", description: "", classification: "Internal", departmentId: "", workflowCategoryId: "" });
+            setCreateForm({
+                subject: "",
+                description: "",
+                classificationId: "",
+                departmentId: "",
+                workflowCategoryId: ""
+            });
             fetchFiles();
         } catch (err: any) { setError(err?.response?.data?.message || "Failed to create file"); }
         finally { setSubmitting(false); }
@@ -345,7 +360,7 @@ const FileManagement = () => {
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{selected?.department?.name}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created By</p><p className="font-medium">{selected?.createdBy?.firstName} {selected?.createdBy?.lastName}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "—"} {selected?.currentOwner?.lastName}</p></div>
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Classification</p><p className="font-medium">{selected?.classification}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Classification</p><p className="font-medium">{(selected?.classification as any)?.name || String(selected?.classification)}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created Date</p><p className="font-medium">{selected && new Date(selected.createdAt).toLocaleDateString()}</p></div>
                                 </div>
 
@@ -603,13 +618,12 @@ const FileManagement = () => {
                             </div>
                             <div className="space-y-2">
                                 <Label>Classification</Label>
-                                <Select value={createForm.classification} onValueChange={(v) => setCreateForm({ ...createForm, classification: v })}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                <Select value={createForm.classificationId} onValueChange={(v) => setCreateForm({ ...createForm, classificationId: v })}>
+                                    <SelectTrigger><SelectValue placeholder="Select classification" /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="Internal">Internal</SelectItem>
-                                        <SelectItem value="Confidential">Confidential</SelectItem>
-                                        <SelectItem value="Public">Public</SelectItem>
-                                        <SelectItem value="Restricted">Restricted</SelectItem>
+                                        {classifications.map(c => (
+                                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -646,24 +660,32 @@ const FileManagement = () => {
                     <form onSubmit={handleAction} className="space-y-4">
                         {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
 
-                        {/* Show user selector only for forward and return actions */}
-                        {((showAction === "forward") || (!selected?.workflowCategoryId && showAction === "return")) && (
-                            <div className="space-y-2">
-                                <Label>{showAction === "return" ? "Return To *" : "Assign To *"}</Label>
-                                <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
-                                    <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                                    <SelectContent>
-                                        {users.filter(u => u.id !== user?.id).map(u => (
-                                            <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                        {/* Show user selector only for forward (normal/no classification) and return actions */}
+                        {((showAction === "forward" && (selected as any)?.classification?.type !== "CUSTOM") ||
+                            (!selected?.workflowCategoryId && showAction === "return")) && (
+                                <div className="space-y-2">
+                                    <Label>{showAction === "return" ? "Return To *" : "Assign To *"}</Label>
+                                    <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
+                                        <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
+                                        <SelectContent>
+                                            {users.filter(u => u.id !== user?.id).map(u => (
+                                                <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
+                        {showAction === "forward" && (selected as any)?.classification?.type === "CUSTOM" && (
+                            <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2.5">
+                                <span className="shrink-0">🔀</span>
+                                <span>This file uses the <strong>{(selected as any)?.classification?.name}</strong> classification. It will be auto-routed to the next person in the predefined route.</span>
                             </div>
                         )}
                         <div className="space-y-2">
                             <Label>Remarks</Label>
                             <Textarea value={actionForm.remarks} onChange={(e) => setActionForm({ ...actionForm, remarks: e.target.value })} placeholder="Add remarks..." rows={3} />
                         </div>
+
                         <DialogFooter>
                             <Button variant="outline" type="button" onClick={() => setShowAction(null)}>Cancel</Button>
                             <Button type="submit" disabled={submitting}>{submitting ? "Processing..." : "Confirm"}</Button>
