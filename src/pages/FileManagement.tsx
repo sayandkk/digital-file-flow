@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -51,6 +51,8 @@ const FileManagement = () => {
     const [submitting, setSubmitting] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
+    const [showUpload, setShowUpload] = useState(false);
+    const [uploadForm, setUploadForm] = useState({ file: null as File | null, description: "" });
 
     const fetchFiles = async () => {
         setLoading(true);
@@ -110,8 +112,10 @@ const FileManagement = () => {
                     comments: actionForm.remarks
                 });
             } else {
-                // Standard actions
-                const payload = { ...actionForm };
+                // Standard actions — only include toUserId when it's set (approve/reject don't need it)
+                const payload = actionForm.toUserId
+                    ? { ...actionForm }
+                    : { remarks: actionForm.remarks };
                 if (showAction === "forward") await filesApi.forward(selected.id, payload);
                 else if (showAction === "approve") await filesApi.approve(selected.id, payload);
                 else if (showAction === "return") await filesApi.return(selected.id, payload);
@@ -121,41 +125,36 @@ const FileManagement = () => {
 
 
             toast.success(`File ${showAction === 'return' ? 'returned' : showAction + 'd'} successfully`);
-            setShowAction(null); setActionForm({ toUserId: "", remarks: "" });
-
-            // Refresh
-            const updated = await filesApi.get(selected.id);
-            setSelected(updated.data);
-            const [movRes, docRes] = await Promise.all([
-                filesApi.getMovements(selected.id),
-                documentsApi.findByFile(selected.id)
-            ]);
-            setMovements(movRes.data);
-            setDocuments(Array.isArray(docRes.data) ? docRes.data : []);
+            setShowAction(null);
+            setActionForm({ toUserId: "", remarks: "" });
+            // Close the file detail dialog and refresh the list
+            setSelected(null);
+            setMovements([]);
+            setDocuments([]);
             fetchFiles();
         } catch (err: any) { setError(err?.response?.data?.message || "Action failed"); }
         finally { setSubmitting(false); }
     };
 
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0] || !selected) return;
-        const file = e.target.files[0];
+    const handleUpload = async () => {
+        if (!uploadForm.file || !selected) return;
         setUploading(true);
         setError("");
-
         try {
             const formData = new FormData();
-            formData.append('file', file);
-            formData.append('fileId', selected.id);
-            formData.append('description', 'Uploaded via File Manager');
+            formData.append('file', uploadForm.file);
 
-            await documentsApi.upload(formData);
+            await documentsApi.upload(formData, {
+                fileId: selected.id,
+                description: uploadForm.description || undefined,
+            });
+            toast.success("Document uploaded successfully");
 
             // Refresh documents
             const res = await documentsApi.findByFile(selected.id);
             setDocuments(Array.isArray(res.data) ? res.data : []);
-
-            if (fileInputRef.current) fileInputRef.current.value = "";
+            setShowUpload(false);
+            setUploadForm({ file: null, description: "" });
         } catch (err: any) {
             setError(err?.response?.data?.message || "Upload failed");
         } finally {
@@ -328,6 +327,12 @@ const FileManagement = () => {
                             <TabsList className="w-full justify-start h-12 bg-transparent p-0">
                                 <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Overview</TabsTrigger>
                                 <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Documents <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{documents.length}</Badge></TabsTrigger>
+                                <TabsTrigger value="remarks" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">
+                                    Remarks
+                                    {movements.filter(m => m.remarks).length > 0 && (
+                                        <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{movements.filter(m => m.remarks).length}</Badge>
+                                    )}
+                                </TabsTrigger>
                                 <TabsTrigger value="history" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">History</TabsTrigger>
                             </TabsList>
                         </div>
@@ -360,28 +365,36 @@ const FileManagement = () => {
                                     <div>
                                         <p className="text-sm font-medium mb-3">Available Actions</p>
                                         <div className="flex flex-wrap gap-2">
-                                            {(!selected.currentStage) && (
+                                            {/* Forward: only for current owner, non-workflow files, non-DEPT_HEAD */}
+                                            {!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && (
                                                 <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
                                                     onClick={() => { setShowAction("forward"); setError(""); }}>
                                                     <Send className="w-3.5 h-3.5" /> Forward
                                                 </Button>
                                             )}
-                                            {isApprover && selected.currentStage && selected.currentStage.role === user?.role && (
-                                                <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-200 hover:bg-green-50"
-                                                    onClick={() => { setShowAction("approve"); setError(""); }}>
-                                                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                                            {/* Approve: workflow stage match OR dept head who owns the file */}
+                                            {((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                (user?.role === 'DEPT_HEAD' && selected.currentOwnerId === user?.id)) && (
+                                                    <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-200 hover:bg-green-50"
+                                                        onClick={() => { setShowAction("approve"); setError(""); }}>
+                                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                                                    </Button>
+                                                )}
+                                            {/* Return: only current owner */}
+                                            {selected.currentOwnerId === user?.id && (
+                                                <Button size="sm" variant="outline" className="gap-1 text-orange-700 border-orange-200 hover:bg-orange-50"
+                                                    onClick={() => { setShowAction("return"); setError(""); }}>
+                                                    <RotateCcw className="w-3.5 h-3.5" /> Return
                                                 </Button>
                                             )}
-                                            <Button size="sm" variant="outline" className="gap-1 text-orange-700 border-orange-200 hover:bg-orange-50"
-                                                onClick={() => { setShowAction("return"); setError(""); }}>
-                                                <RotateCcw className="w-3.5 h-3.5" /> Return
-                                            </Button>
-                                            {isApprover && selected.currentStage && selected.currentStage.role === user?.role && (
-                                                <Button size="sm" variant="outline" className="gap-1 text-red-700 border-red-200 hover:bg-red-50"
-                                                    onClick={() => { setShowAction("reject"); setError(""); }}>
-                                                    <XCircle className="w-3.5 h-3.5" /> Reject
-                                                </Button>
-                                            )}
+                                            {/* Reject: workflow stage match OR dept head who owns the file */}
+                                            {((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                (user?.role === 'DEPT_HEAD' && selected.currentOwnerId === user?.id)) && (
+                                                    <Button size="sm" variant="outline" className="gap-1 text-red-700 border-red-200 hover:bg-red-50"
+                                                        onClick={() => { setShowAction("reject"); setError(""); }}>
+                                                        <XCircle className="w-3.5 h-3.5" /> Reject
+                                                    </Button>
+                                                )}
                                         </div>
                                     </div>
                                 )}
@@ -391,18 +404,9 @@ const FileManagement = () => {
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-center">
                                         <h3 className="text-sm font-medium">Attached Documents</h3>
-                                        <div>
-                                            <input
-                                                type="file"
-                                                ref={fileInputRef}
-                                                className="hidden"
-                                                onChange={handleUpload}
-                                            />
-                                            <Button size="sm" variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                                                {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                                                Upload Document
-                                            </Button>
-                                        </div>
+                                        <Button size="sm" variant="outline" className="gap-2" onClick={() => { setShowUpload(true); setError(""); }}>
+                                            <Upload className="w-4 h-4" /> Upload Document
+                                        </Button>
                                     </div>
 
                                     {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
@@ -415,30 +419,38 @@ const FileManagement = () => {
                                     ) : (
                                         <div className="space-y-2">
                                             {documents.map((doc) => (
-                                                <div key={doc.id} className="flex items-center justify-between p-3 bg-card border rounded-md hover:bg-muted/30">
-                                                    <div className="flex items-center gap-3 overflow-hidden">
-                                                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                                                            <FileText className="w-4 h-4 text-primary" />
+                                                <div key={doc.id} className="border rounded-md bg-card hover:bg-muted/30 overflow-hidden">
+                                                    <div className="flex items-center justify-between p-3">
+                                                        <div className="flex items-center gap-3 overflow-hidden">
+                                                            <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                                                                <FileText className="w-4 h-4 text-primary" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    {(doc.size / 1024).toFixed(1)} KB · v{doc.version} · {new Date(doc.createdAt).toLocaleDateString()}
+                                                                </p>
+                                                            </div>
                                                         </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {(doc.size / 1024).toFixed(1)} KB · v{doc.version} · {new Date(doc.createdAt).toLocaleDateString()}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                                            onClick={() => handleDownload(doc)} title="Download">
-                                                            <Download className="w-4 h-4" />
-                                                        </Button>
-                                                        {selected?.status === 'PENDING' && (
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                                                onClick={() => handleDeleteDocument(doc.id)} title="Delete">
-                                                                <Trash2 className="w-4 h-4" />
+                                                        <div className="flex items-center gap-1">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                                                onClick={() => handleDownload(doc)} title="Download">
+                                                                <Download className="w-4 h-4" />
                                                             </Button>
-                                                        )}
+                                                            {selected?.status === 'PENDING' && (
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                                    onClick={() => handleDeleteDocument(doc.id)} title="Delete">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </Button>
+                                                            )}
+                                                        </div>
                                                     </div>
+                                                    {doc.description && (
+                                                        <div className="border-t bg-blue-50/50 px-3 py-2">
+                                                            <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Remarks</p>
+                                                            <p className="text-xs text-blue-800">{doc.description}</p>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -507,6 +519,62 @@ const FileManagement = () => {
                                     )}
                                 </div>
                             </TabsContent>
+
+                            {/* ── Remarks Tab ──────────────────────────────── */}
+                            <TabsContent value="remarks" className="mt-0">
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-medium">Remarks History</h3>
+                                    {movements.filter(m => m.remarks).length === 0 ? (
+                                        <div className="text-center py-10 text-muted-foreground">
+                                            <p className="text-sm">No remarks have been added yet.</p>
+                                            <p className="text-xs mt-1">Remarks are added when a file is forwarded, approved, returned or rejected.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {movements.filter(m => m.remarks).map((m, i) => {
+                                                const colorMap: Record<string, { card: string; badge: string }> = {
+                                                    FORWARD: { card: "border-l-blue-400 bg-blue-50/40", badge: "bg-blue-100 text-blue-700" },
+                                                    APPROVE: { card: "border-l-green-400 bg-green-50/40", badge: "bg-green-100 text-green-700" },
+                                                    RETURN: { card: "border-l-orange-400 bg-orange-50/40", badge: "bg-orange-100 text-orange-700" },
+                                                    REJECT: { card: "border-l-red-400 bg-red-50/40", badge: "bg-red-100 text-red-700" },
+                                                };
+                                                const c = colorMap[m.action] || { card: "border-l-gray-300 bg-muted/20", badge: "bg-gray-100 text-gray-700" };
+                                                return (
+                                                    <div key={m.id} className={`border-l-4 rounded-md p-4 ${c.card}`}>
+                                                        {/* Header row */}
+                                                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                                                            <div className="space-y-0.5">
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="text-sm font-semibold">
+                                                                        {m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System"}
+                                                                    </span>
+                                                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                                                    <span className="text-sm text-muted-foreground">
+                                                                        {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—"}
+                                                                    </span>
+                                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${c.badge}`}>
+                                                                        {m.action}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[11px] text-muted-foreground">
+                                                                    {new Date(m.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                                </p>
+                                                            </div>
+                                                            <span className="text-[11px] text-muted-foreground font-medium shrink-0">#{i + 1}</span>
+                                                        </div>
+                                                        {/* Remarks body */}
+                                                        <div className="mt-3 border-t border-black/10 pt-3">
+                                                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Remarks</p>
+                                                            <p className="text-sm leading-relaxed">{m.remarks}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </TabsContent>
+
                         </div>
                     </Tabs>
                     <DialogFooter className="p-4 border-t bg-muted/20">
@@ -578,8 +646,8 @@ const FileManagement = () => {
                     <form onSubmit={handleAction} className="space-y-4">
                         {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
 
-                        {/* Show forward user select if it's a forward action OR if it's a standard file action (approve/return/reject) which requires a target user */}
-                        {((showAction === "forward") || (!selected?.workflowCategoryId && ["approve", "return", "reject"].includes(showAction || ""))) && (
+                        {/* Show user selector only for forward and return actions */}
+                        {((showAction === "forward") || (!selected?.workflowCategoryId && showAction === "return")) && (
                             <div className="space-y-2">
                                 <Label>{showAction === "return" ? "Return To *" : "Assign To *"}</Label>
                                 <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
@@ -599,6 +667,45 @@ const FileManagement = () => {
                         <DialogFooter>
                             <Button variant="outline" type="button" onClick={() => setShowAction(null)}>Cancel</Button>
                             <Button type="submit" disabled={submitting}>{submitting ? "Processing..." : "Confirm"}</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Upload Document Dialog */}
+            <Dialog open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) { setUploadForm({ file: null, description: "" }); setError(""); } }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Upload Document</DialogTitle>
+                        <DialogDescription>Select a file and add remarks for this document.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={async (e) => { e.preventDefault(); await handleUpload(); }} className="space-y-4">
+                        {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+                        <div className="space-y-2">
+                            <Label>File *</Label>
+                            <Input
+                                type="file"
+                                required
+                                onChange={(e) => setUploadForm({ ...uploadForm, file: e.target.files?.[0] ?? null })}
+                            />
+                            {uploadForm.file && (
+                                <p className="text-xs text-muted-foreground">{uploadForm.file.name} ({(uploadForm.file.size / 1024).toFixed(1)} KB)</p>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Remarks / Description</Label>
+                            <Textarea
+                                placeholder="Add remarks for this document..."
+                                value={uploadForm.description}
+                                onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                                rows={3}
+                            />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" type="button" onClick={() => setShowUpload(false)}>Cancel</Button>
+                            <Button type="submit" disabled={uploading || !uploadForm.file}>
+                                {uploading ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" /> Uploading...</> : <><Upload className="w-4 h-4 mr-2" /> Upload</>}
+                            </Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>

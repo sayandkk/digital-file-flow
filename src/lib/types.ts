@@ -129,6 +129,7 @@ export interface Document {
     mimeType: string;
     size: number;
     version: number;
+    description?: string;
     tags?: string[];
     isReference: boolean;
     file?: FileRecord;

@@ -82,8 +82,11 @@ export const notesApi = {
 export const documentsApi = {
     list: (params?: any) => api.get('/documents', { params }),
     get: (id: string) => api.get(`/documents/${id}`),
-    upload: (formData: FormData) =>
-        api.post('/documents/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    upload: (formData: FormData, params?: { fileId?: string; inwardId?: string; description?: string }) =>
+        api.post('/documents/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            params,
+        }),
     delete: (id: string) => api.delete(`/documents/${id}`),
     download: (id: string) => api.get(`/documents/${id}/download`, { responseType: 'blob' }),
     findByFile: (fileId: string) => api.get(`/documents/file/${fileId}`),
