@@ -5,11 +5,25 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import ComingSoon from "./pages/ComingSoon";
+import InwardManagement from "./pages/InwardManagement";
+import FileManagement from "./pages/FileManagement";
+import NotesManagement from "./pages/NotesManagement";
+import DocumentManagement from "./pages/DocumentManagement";
+import WorkflowTracking from "./pages/WorkflowTracking";
+import ArchiveManagement from "./pages/ArchiveManagement";
+import ReportsAnalytics from "./pages/ReportsAnalytics";
+import AdminSettings from "./pages/AdminSettings";
+import ClassificationManagement from "./pages/ClassificationManagement";
 import DashboardLayout from "./components/layout/DashboardLayout";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem("access_token");
+  if (!token) return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -19,17 +33,25 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Login />} />
-          <Route path="/dashboard" element={<DashboardLayout />}>
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<Dashboard />} />
-            <Route path="inward" element={<ComingSoon />} />
-            <Route path="files" element={<ComingSoon />} />
-            <Route path="notes" element={<ComingSoon />} />
-            <Route path="documents" element={<ComingSoon />} />
-            <Route path="workflow" element={<ComingSoon />} />
-            <Route path="archive" element={<ComingSoon />} />
-            <Route path="reports" element={<ComingSoon />} />
-            <Route path="search" element={<ComingSoon />} />
-            <Route path="settings" element={<ComingSoon />} />
+            <Route path="inward" element={<InwardManagement />} />
+            <Route path="files" element={<FileManagement />} />
+            <Route path="notes" element={<NotesManagement />} />
+            <Route path="documents" element={<DocumentManagement />} />
+            <Route path="workflow" element={<WorkflowTracking />} />
+            <Route path="archive" element={<ArchiveManagement />} />
+            <Route path="reports" element={<ReportsAnalytics />} />
+            <Route path="users" element={<AdminSettings />} />
+            <Route path="settings" element={<AdminSettings />} />
+            <Route path="classifications" element={<ClassificationManagement />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
