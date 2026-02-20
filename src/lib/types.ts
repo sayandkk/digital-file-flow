@@ -143,7 +143,9 @@ export interface Document {
     file?: FileRecord;
     fileId?: string;
     uploadedBy?: User;
+    uploadedById?: string;
     createdAt: string;
+    heading?: string;
 }
 
 export interface DashboardStats {

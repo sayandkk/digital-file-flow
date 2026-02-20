@@ -82,7 +82,7 @@ export const notesApi = {
 export const documentsApi = {
     list: (params?: any) => api.get('/documents', { params }),
     get: (id: string) => api.get(`/documents/${id}`),
-    upload: (formData: FormData, params?: { fileId?: string; inwardId?: string; description?: string }) =>
+    upload: (formData: FormData, params?: { fileId?: string; inwardId?: string; description?: string; heading?: string }) =>
         api.post('/documents/upload', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
             params,

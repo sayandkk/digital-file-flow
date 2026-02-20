@@ -59,7 +59,8 @@ const FileManagement = () => {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
     const [showUpload, setShowUpload] = useState(false);
-    const [uploadForm, setUploadForm] = useState({ file: null as File | null, description: "" });
+    const [uploadForm, setUploadForm] = useState({ file: null as File | null, description: "", heading: "" });
+    const [isNewHeading, setIsNewHeading] = useState(false);
 
     const fetchFiles = async () => {
         setLoading(true);
@@ -162,6 +163,7 @@ const FileManagement = () => {
             await documentsApi.upload(formData, {
                 fileId: selected.id,
                 description: uploadForm.description || undefined,
+                heading: uploadForm.heading.trim() || undefined
             });
             toast.success("Document uploaded successfully");
 
@@ -169,7 +171,7 @@ const FileManagement = () => {
             const res = await documentsApi.findByFile(selected.id);
             setDocuments(Array.isArray(res.data) ? res.data : []);
             setShowUpload(false);
-            setUploadForm({ file: null, description: "" });
+            setUploadForm({ file: null, description: "", heading: "" });
         } catch (err: any) {
             setError(err?.response?.data?.message || "Upload failed");
         } finally {
@@ -420,7 +422,7 @@ const FileManagement = () => {
                                     <div className="flex justify-between items-center">
                                         <h3 className="text-sm font-medium">Attached Documents</h3>
                                         <Button size="sm" variant="outline" className="gap-2" onClick={() => { setShowUpload(true); setError(""); }}>
-                                            <Upload className="w-4 h-4" /> Upload Document
+                                            <Upload className="w-4 h-4" /> Upload Version
                                         </Button>
                                     </div>
 
@@ -432,40 +434,50 @@ const FileManagement = () => {
                                             <p>No documents attached</p>
                                         </div>
                                     ) : (
-                                        <div className="space-y-2">
-                                            {documents.map((doc) => (
-                                                <div key={doc.id} className="border rounded-md bg-card hover:bg-muted/30 overflow-hidden">
-                                                    <div className="flex items-center justify-between p-3">
-                                                        <div className="flex items-center gap-3 overflow-hidden">
-                                                            <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                                                                <FileText className="w-4 h-4 text-primary" />
+                                        <div className="space-y-4">
+                                            {Object.entries(documents.reduce((acc, doc) => {
+                                                const h = doc.heading || "General Documents";
+                                                if (!acc[h]) acc[h] = [];
+                                                acc[h].push(doc);
+                                                return acc;
+                                            }, {} as Record<string, Document[]>)).map(([heading, docs]) => (
+                                                <div key={heading} className="space-y-2">
+                                                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{heading}</h4>
+                                                    {docs.map((doc) => (
+                                                        <div key={doc.id} className="border rounded-md bg-card hover:bg-muted/30 overflow-hidden">
+                                                            <div className="flex items-center justify-between p-3">
+                                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                                    <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0 text-primary font-bold text-xs">
+                                                                        v{doc.version}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
+                                                                        <p className="text-xs text-muted-foreground">
+                                                                            {(doc.size / 1024).toFixed(1)} KB · {new Date(doc.createdAt).toLocaleDateString()}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                                                        onClick={() => handleDownload(doc)} title="Download">
+                                                                        <Download className="w-4 h-4" />
+                                                                    </Button>
+                                                                    {selected?.status === 'PENDING' && (
+                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                                            onClick={() => handleDeleteDocument(doc.id)} title="Delete">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </Button>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            <div className="min-w-0">
-                                                                <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
-                                                                <p className="text-xs text-muted-foreground">
-                                                                    {(doc.size / 1024).toFixed(1)} KB · v{doc.version} · {new Date(doc.createdAt).toLocaleDateString()}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-1">
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                                                onClick={() => handleDownload(doc)} title="Download">
-                                                                <Download className="w-4 h-4" />
-                                                            </Button>
-                                                            {selected?.status === 'PENDING' && (
-                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                                                    onClick={() => handleDeleteDocument(doc.id)} title="Delete">
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </Button>
+                                                            {doc.description && (
+                                                                <div className="border-t bg-blue-50/50 px-3 py-2">
+                                                                    <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Remarks</p>
+                                                                    <p className="text-xs text-blue-800">{doc.description}</p>
+                                                                </div>
                                                             )}
                                                         </div>
-                                                    </div>
-                                                    {doc.description && (
-                                                        <div className="border-t bg-blue-50/50 px-3 py-2">
-                                                            <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Remarks</p>
-                                                            <p className="text-xs text-blue-800">{doc.description}</p>
-                                                        </div>
-                                                    )}
+                                                    ))}
                                                 </div>
                                             ))}
                                         </div>
@@ -708,7 +720,7 @@ const FileManagement = () => {
             </Dialog>
 
             {/* Upload Document Dialog */}
-            <Dialog open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) { setUploadForm({ file: null, description: "" }); setError(""); } }}>
+            <Dialog open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) { setUploadForm({ file: null, description: "", heading: "" }); setError(""); setIsNewHeading(false); } }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Upload Document</DialogTitle>
@@ -728,6 +740,56 @@ const FileManagement = () => {
                             )}
                         </div>
                         <div className="space-y-2">
+                            <Label>Heading</Label>
+                            {Array.from(new Set(documents.map(d => d.heading).filter(Boolean))).length > 0 && !isNewHeading ? (
+                                <div className="flex gap-2">
+                                    <Select
+                                        value={uploadForm.heading}
+                                        onValueChange={(val) => {
+                                            if (val === "NEW_HEADING_OPTION") {
+                                                setIsNewHeading(true);
+                                                setUploadForm({ ...uploadForm, heading: "" });
+                                            } else {
+                                                setUploadForm({ ...uploadForm, heading: val });
+                                            }
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Select heading..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {Array.from(new Set(documents.map(d => d.heading).filter(Boolean))).map((h) => (
+                                                <SelectItem key={h as string} value={h as string}>{h as string}</SelectItem>
+                                            ))}
+                                            <SelectItem value="NEW_HEADING_OPTION" className="text-muted-foreground font-medium">
+                                                + Create New Heading
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="E.g. Contract, Invoice..."
+                                        value={uploadForm.heading}
+                                        onChange={(e) => setUploadForm({ ...uploadForm, heading: e.target.value })}
+                                        autoFocus={isNewHeading}
+                                    />
+                                    {Array.from(new Set(documents.map(d => d.heading).filter(Boolean))).length > 0 && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setIsNewHeading(false)}
+                                            className="shrink-0"
+                                        >
+                                            Cancel
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="space-y-2">
                             <Label>Remarks / Description</Label>
                             <Textarea
                                 placeholder="Add remarks for this document..."
@@ -739,7 +801,7 @@ const FileManagement = () => {
                         <DialogFooter>
                             <Button variant="outline" type="button" onClick={() => setShowUpload(false)}>Cancel</Button>
                             <Button type="submit" disabled={uploading || !uploadForm.file}>
-                                {uploading ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" /> Uploading...</> : <><Upload className="w-4 h-4 mr-2" /> Upload</>}
+                                {uploading ? <><RefreshCw className="w-4 h-4 animate-spin mr-2" /> Uploading...</> : <><Upload className="w-4 h-4 mr-2" /> Upload Version</>}
                             </Button>
                         </DialogFooter>
                     </form>
