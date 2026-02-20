@@ -74,7 +74,7 @@ const FileManagement = () => {
 
     useEffect(() => {
         departmentsApi.list().then(r => setDepartments(r.data)).catch(() => { });
-        usersApi.list().then(r => { const d = r.data; setUsers(Array.isArray(d) ? d : d.data || []); }).catch(() => { });
+        usersApi.list({ directory: true }).then(r => { const d = r.data; setUsers(Array.isArray(d) ? d : d.data || []); }).catch(() => { });
         workflowApi.listCategories().then(r => setWorkflowCategories(Array.isArray(r.data) ? r.data : [])).catch(() => { });
         classificationsApi.list().then(r => setClassifications(r.data)).catch(() => { });
     }, []);
@@ -376,7 +376,7 @@ const FileManagement = () => {
                                 <Separator />
 
                                 {/* Action Buttons */}
-                                {(selected?.status === "PENDING" || selected?.status === "FORWARDED") && (
+                                {(selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
                                     <div>
                                         <p className="text-sm font-medium mb-3">Available Actions</p>
                                         <div className="flex flex-wrap gap-2">
@@ -384,7 +384,7 @@ const FileManagement = () => {
                                             {!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && (
                                                 <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
                                                     onClick={() => { setShowAction("forward"); setError(""); }}>
-                                                    <Send className="w-3.5 h-3.5" /> Forward
+                                                    <Send className="w-3.5 h-3.5" /> {(selected?.status === "RETURNED") ? "Resubmit" : "Forward"}
                                                 </Button>
                                             )}
                                             {/* Approve: workflow stage match OR dept head who owns the file */}
@@ -668,7 +668,20 @@ const FileManagement = () => {
                                     <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
                                         <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
                                         <SelectContent>
-                                            {users.filter(u => u.id !== user?.id).map(u => (
+                                            {users.filter(u => {
+                                                if (u.id === user?.id) return false;
+                                                if (showAction === "return") {
+                                                    // Only show users who have been involved in the file (creator + previous owners from movements)
+                                                    const involvedUserIds = new Set<string>();
+                                                    if (selected?.createdById) involvedUserIds.add(selected.createdById);
+                                                    movements.forEach(m => {
+                                                        if (m.fromUserId) involvedUserIds.add(m.fromUserId);
+                                                        if (m.toUserId) involvedUserIds.add(m.toUserId);
+                                                    });
+                                                    return involvedUserIds.has(u.id);
+                                                }
+                                                return true; // For forward, show all users (except self)
+                                            }).map(u => (
                                                 <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
                                             ))}
                                         </SelectContent>
