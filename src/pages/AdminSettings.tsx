@@ -11,6 +11,16 @@ import { Settings, Users, Building2, Plus, Edit2, UserX, RefreshCw, AlertCircle,
 import { usersApi, departmentsApi, workflowApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import type { User, Department, Role, UserStatus, WorkflowCategory, WorkflowStage } from "@/lib/types";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const roleColors: Record<Role, string> = {
     ADMIN: "bg-red-100 text-red-700",
@@ -61,6 +71,16 @@ const AdminSettings = () => {
     const [workflowForm, setWorkflowForm] = useState({ name: "", description: "" });
     const [stageForm, setStageForm] = useState({ role: "OFFICER" as Role, stageOrder: 1, isMandatory: true });
 
+    // Alert Dialog State
+    const [confirmAction, setConfirmAction] = useState<{
+        isOpen: boolean;
+        title: string;
+        description: string;
+        actionText: string;
+        actionVariant?: "default" | "destructive";
+        onConfirm: () => void;
+    }>({ isOpen: false, title: "", description: "", actionText: "", onConfirm: () => { } });
+
     const fetchUsers = async () => {
         setLoadingUsers(true);
         try {
@@ -100,16 +120,23 @@ const AdminSettings = () => {
     const handleUserSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setSubmitting(true); setError("");
         try {
-            const payload = { ...userForm };
+            const payload: any = { ...userForm };
             // Sanitize optional fields to avoid unique constraint violations on empty strings
-            if (!payload.departmentId) delete (payload as any).departmentId;
-            if (!payload.employeeId) delete (payload as any).employeeId;
-            if (!payload.designation) delete (payload as any).designation;
-            // Phone is not in the form state explicitly shown in snippets but if it were, we'd delete it too.
-            // userForm has: email, password, firstName, lastName, role, departmentId, designation, employeeId
+            if (!payload.departmentId) delete payload.departmentId;
+            if (!payload.employeeId) delete payload.employeeId;
+            if (!payload.designation) delete payload.designation;
+
+            // Remove properties that backend rejects (added by {...u} spread when editing)
+            delete payload.id;
+            delete payload.status;
+            delete payload.createdAt;
+            delete payload.updatedAt;
+            delete payload.lastLoginAt;
+            delete payload.department;
 
             if (editingUser) {
                 const { password, ...rest } = payload;
+                if (password) rest.password = password; // Only send password if changed
                 await usersApi.update(editingUser.id, rest);
             } else {
                 await usersApi.create(payload);
@@ -121,9 +148,30 @@ const AdminSettings = () => {
     };
 
     const handleDeactivate = async (user: User) => {
-        if (!confirm(`Deactivate ${user.firstName} ${user.lastName}?`)) return;
         try { await usersApi.deactivate(user.id); fetchUsers(); }
         catch (err: any) { alert(err?.response?.data?.message || "Failed to deactivate"); }
+    };
+
+    const handleReactivate = async (user: User) => {
+        try { await usersApi.reactivate(user.id); fetchUsers(); }
+        catch (err: any) { alert(err?.response?.data?.message || "Failed to reactivate"); }
+    };
+
+    const promptUserAction = (user: User, action: 'deactivate' | 'reactivate') => {
+        setConfirmAction({
+            isOpen: true,
+            title: action === 'deactivate' ? "Deactivate User" : "Reactivate User",
+            description: action === 'deactivate'
+                ? `Are you sure you want to deactivate ${user.firstName} ${user.lastName}? They will no longer be able to log in.`
+                : `Are you sure you want to reactivate ${user.firstName} ${user.lastName}? They will regain access to the system.`,
+            actionText: action === 'deactivate' ? "Deactivate" : "Reactivate",
+            actionVariant: action === 'deactivate' ? "destructive" : "default",
+            onConfirm: () => {
+                if (action === 'deactivate') handleDeactivate(user);
+                else handleReactivate(user);
+                setConfirmAction(prev => ({ ...prev, isOpen: false }));
+            }
+        });
     };
 
     const handleDeptSubmit = async (e: React.FormEvent) => {
@@ -251,7 +299,8 @@ const AdminSettings = () => {
                                                     <td className="py-3 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[u.status]}`}>{u.status}</span></td>
                                                     <td className="py-3 px-3 text-right">
                                                         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingUser(u); setUserForm({ ...u, password: "", departmentId: u.departmentId || "", designation: u.designation || "", employeeId: u.employeeId || "" }); setShowUserForm(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
-                                                        {u.status === "ACTIVE" && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeactivate(u)}><UserX className="w-3.5 h-3.5" /></Button>}
+                                                        {u.status === "ACTIVE" && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => promptUserAction(u, 'deactivate')} title="Deactivate"><UserX className="w-3.5 h-3.5" /></Button>}
+                                                        {u.status === "INACTIVE" && <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600" onClick={() => promptUserAction(u, 'reactivate')} title="Reactivate"><RefreshCw className="w-3.5 h-3.5" /></Button>}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -447,6 +496,26 @@ const AdminSettings = () => {
                     </form>
                 </DialogContent>
             </Dialog>
+
+            <AlertDialog open={confirmAction.isOpen} onOpenChange={(isOpen) => setConfirmAction(prev => ({ ...prev, isOpen }))}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{confirmAction.title}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {confirmAction.description}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => { e.preventDefault(); confirmAction.onConfirm(); }}
+                            className={confirmAction.actionVariant === "destructive" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+                        >
+                            {confirmAction.actionText}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 };

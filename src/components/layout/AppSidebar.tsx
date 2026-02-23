@@ -21,12 +21,12 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
-  { label: "Requests", icon: Inbox, path: "/dashboard/requests" },
+  // { label: "Requests", icon: Inbox, path: "/dashboard/requests" },
   // { label: "Inward Register", icon: Inbox, path: "/dashboard/inward" },
   { label: "File Management", icon: FolderOpen, path: "/dashboard/files" },
   // { label: "Notes & Drafts", icon: ClipboardList, path: "/dashboard/notes" },
   // { label: "Documents", icon: FileText, path: "/dashboard/documents" },
-  { label: "Workflow", icon: GitBranch, path: "/dashboard/workflow" },
+  { label: "File Tracker", icon: GitBranch, path: "/dashboard/workflow" },
   // { label: "Archive", icon: Archive, path: "/dashboard/archive" },
   { label: "Reports", icon: BarChart3, path: "/dashboard/reports" },
   // { label: "Search", icon: Search, path: "/dashboard/search" },

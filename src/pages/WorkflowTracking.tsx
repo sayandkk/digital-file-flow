@@ -66,7 +66,7 @@ const WorkflowTracking = () => {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-2xl font-bold tracking-tight">Workflow & File Tracking</h1>
+                <h1 className="text-2xl font-bold tracking-tight">File Tracking</h1>
                 <p className="text-muted-foreground text-sm mt-1">View the complete movement trail of any file</p>
             </div>
 
@@ -101,9 +101,9 @@ const WorkflowTracking = () => {
                                 <div><p className="text-muted-foreground text-xs">Subject</p><p className="font-medium truncate">{file.subject}</p></div>
                                 <div><p className="text-muted-foreground text-xs">Status</p>
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${file.status === "APPROVED" ? "bg-green-100 text-green-700" :
-                                            file.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
-                                                file.status === "RETURNED" ? "bg-orange-100 text-orange-700" :
-                                                    "bg-blue-100 text-blue-700"}`}>{file.status}</span>
+                                        file.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
+                                            file.status === "RETURNED" ? "bg-orange-100 text-orange-700" :
+                                                "bg-blue-100 text-blue-700"}`}>{file.status}</span>
                                 </div>
                                 <div><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{file.department?.name || "—"}</p></div>
                             </div>
