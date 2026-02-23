@@ -243,7 +243,7 @@ const AdminSettings = () => {
                     {isAdmin && (
                         <>
                             <TabsTrigger value="departments" className="gap-2"><Building2 className="w-4 h-4" /> Departments</TabsTrigger>
-                            <TabsTrigger value="workflows" className="gap-2"><GitBranch className="w-4 h-4" /> Workflows</TabsTrigger>
+                            {/* <TabsTrigger value="workflows" className="gap-2"><GitBranch className="w-4 h-4" /> Workflows</TabsTrigger> */}
                             <TabsTrigger value="system" className="gap-2"><Settings className="w-4 h-4" /> System</TabsTrigger>
                         </>
                     )}

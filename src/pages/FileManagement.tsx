@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import {
-    FolderOpen, Plus, Search, RefreshCw, Eye, ChevronRight,
+    FolderOpen, Plus, Search, RefreshCw, Eye, ChevronRight, ChevronLeft,
     CheckCircle2, RotateCcw, XCircle, Send, AlertCircle, Clock, Archive, GitBranch,
     FileText, Upload, Download, Trash2, Paperclip
 } from "lucide-react";
@@ -32,6 +33,8 @@ const statusConfig: Record<FileStatus, { label: string; color: string; icon: any
 
 const FileManagement = () => {
     const { user, isApprover } = useAuth();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [files, setFiles] = useState<FileRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState("ALL");
@@ -75,6 +78,7 @@ const FileManagement = () => {
             const params: any = {
                 status: statusFilter === "ALL" ? undefined : statusFilter,
                 search,
+                isMaster: false,
             };
             if (priorityFilter && priorityFilter !== "ALL") params.priority = priorityFilter;
             if (categoryFilter && categoryFilter !== "ALL") params.category = categoryFilter;
@@ -96,11 +100,25 @@ const FileManagement = () => {
     }, []);
 
     const openFile = async (file: FileRecord) => {
-        setSelected(file);
+        let fullFile = file;
+
+        // If file is missing full relations or fields (e.g., clicked from a Master File's sub-file list), fetch it fully
+        // The sub-files only contain id, subject, fileNumber, status
+        if (!fullFile.createdAt || !(fullFile as any).department) {
+            try {
+                const res = await filesApi.get(fullFile.id);
+                fullFile = { ...fullFile, ...(res.data?.data || res.data) };
+            } catch (err) {
+                console.error("Failed to load full file details:", err);
+                toast.error("Could not load full file details");
+            }
+        }
+
+        setSelected(fullFile);
         try {
             const [movRes, docRes] = await Promise.all([
-                filesApi.getMovements(file.id),
-                documentsApi.findByFile(file.id)
+                filesApi.getMovements(fullFile.id),
+                documentsApi.findByFile(fullFile.id)
             ]);
             setMovements(movRes.data);
             setDocuments(Array.isArray(docRes.data) ? docRes.data : []);
@@ -109,6 +127,22 @@ const FileManagement = () => {
             setDocuments([]);
         }
     };
+
+    // Handle auto-selection of file passed via react-router location state
+    useEffect(() => {
+        const state = location.state as { selectedFileId?: string, isMasterView?: boolean };
+        if (state?.selectedFileId && !loading) {
+            const fileToSelect = files.find(f => f.id === state.selectedFileId);
+            if (fileToSelect && (!selected || selected.id !== fileToSelect.id)) {
+                openFile(fileToSelect);
+                navigate(location.pathname, { replace: true, state: {} });
+            } else if (state.isMasterView && (!selected || selected.id !== state.selectedFileId)) {
+                // Master file is not in 'files' list, so pass partial object to openFile to trigger fetch
+                openFile({ id: state.selectedFileId } as any);
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+        }
+    }, [location.state, loading, files, selected, navigate, location.pathname]);
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault(); setSubmitting(true); setError("");
@@ -225,11 +259,24 @@ const FileManagement = () => {
         }
     };
 
-    const StatusBadge = ({ status }: { status: FileStatus }) => {
-        const cfg = statusConfig[status] || statusConfig.PENDING;
-        return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.color} flex items-center gap-1 w-fit`}>
-            {status === 'APPROVED' && <CheckCircle2 className="w-3 h-3" />}
-            {cfg.label}
+    const StatusBadge = ({ file }: { file: FileRecord }) => {
+        const isOwner = file.currentOwnerId === user?.id;
+        const isActive = ['PENDING', 'FORWARDED', 'RETURNED'].includes(file.status);
+
+        const cfg = statusConfig[file.status] || statusConfig.PENDING;
+        let label = cfg.label;
+        let color = cfg.color;
+        let Icon = cfg.icon;
+
+        if (isOwner && isActive) {
+            label = "Action Required";
+            color = "bg-orange-100 text-orange-800 border-orange-200 border";
+            Icon = AlertCircle;
+        }
+
+        return <span className={`text-[10px] sm:text-xs font-medium px-2 py-0.5 rounded-full ${color} flex items-center gap-1 w-fit`}>
+            {Icon && <Icon className="w-3 h-3" />}
+            {label}
         </span>;
     };
 
@@ -348,6 +395,7 @@ const FileManagement = () => {
                                             <div className="flex items-center gap-2">
                                                 <p className="font-medium text-sm truncate">{file.subject}</p>
                                                 {file.workflowCategory && <Badge variant="outline" className="text-[10px] h-5">{file.workflowCategory.name}</Badge>}
+                                                {(file as any).isMaster && <Badge variant="default" className="text-[10px] h-5 bg-indigo-500 hover:bg-indigo-600">Master File</Badge>}
                                             </div>
                                             <p className="text-xs text-muted-foreground">
                                                 {file.fileNumber} · {file.department?.name || "—"}
@@ -355,7 +403,7 @@ const FileManagement = () => {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0">
-                                        <StatusBadge status={file.status} />
+                                        <StatusBadge file={file} />
                                         {file.priority && (
                                             <Badge variant="outline" className="text-[10px] h-5">
                                                 {file.priority}
@@ -385,10 +433,23 @@ const FileManagement = () => {
                     <div className="p-6 pb-2">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2 text-xl">
+                                {(selected as any)?.parentId && (selected as any)?.parent && (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 mr-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                                        onClick={() => openFile((selected as any).parent)}
+                                        title="Back to Master File"
+                                    >
+                                        <ChevronLeft className="w-5 h-5" />
+                                    </Button>
+                                )}
                                 <FolderOpen className="w-6 h-6 text-primary" />
                                 <span className="truncate">{selected?.fileNumber}</span>
                             </DialogTitle>
-                            <p className="text-sm text-muted-foreground">{selected?.subject}</p>
+                            <p className="text-sm text-muted-foreground pl-10">
+                                {selected?.subject}
+                            </p>
                         </DialogHeader>
 
                         {selected?.workflowCategory && (
@@ -416,14 +477,18 @@ const FileManagement = () => {
                         <div className="px-6 border-b">
                             <TabsList className="w-full justify-start h-12 bg-transparent p-0">
                                 <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Overview</TabsTrigger>
-                                <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Documents <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{documents.length}</Badge></TabsTrigger>
-                                <TabsTrigger value="remarks" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">
-                                    Remarks
-                                    {movements.filter(m => m.remarks).length > 0 && (
-                                        <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{movements.filter(m => m.remarks).length}</Badge>
-                                    )}
-                                </TabsTrigger>
-                                <TabsTrigger value="history" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">History</TabsTrigger>
+                                {!(selected as any)?.isMaster && (
+                                    <>
+                                        <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Documents <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{documents.length}</Badge></TabsTrigger>
+                                        <TabsTrigger value="remarks" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">
+                                            Remarks
+                                            {movements.filter(m => m.remarks).length > 0 && (
+                                                <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{movements.filter(m => m.remarks).length}</Badge>
+                                            )}
+                                        </TabsTrigger>
+                                        <TabsTrigger value="history" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">History</TabsTrigger>
+                                    </>
+                                )}
                             </TabsList>
                         </div>
 
@@ -431,7 +496,7 @@ const FileManagement = () => {
                             <TabsContent value="overview" className="mt-0 space-y-6">
                                 {/* Metadata */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Status</p>{selected && <StatusBadge status={selected.status} />}</div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Status</p>{selected && <StatusBadge file={selected} />}</div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{selected?.department?.name}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created By</p><p className="font-medium">{selected?.createdBy?.firstName} {selected?.createdBy?.lastName}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "—"} {selected?.currentOwner?.lastName}</p></div>
@@ -449,10 +514,44 @@ const FileManagement = () => {
                                     </div>
                                 )}
 
+                                {selected && (selected as any).isMaster && (selected as any).children && ((selected as any).children.length > 0) && (
+                                    <div className="space-y-2 mt-4">
+                                        <Label>Sub-Files</Label>
+                                        <div className="space-y-2 bg-muted/20 p-3 rounded-md border">
+                                            {(selected as any).children.map((child: any) => (
+                                                <div
+                                                    key={child.id}
+                                                    className="flex justify-between items-center bg-background p-2 rounded border text-sm hover:bg-muted/50 cursor-pointer group transition-colors"
+                                                    onClick={() => openFile(child)}
+                                                >
+                                                    <span className="font-medium truncate pr-4">{child.fileNumber} - {child.subject}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium ${child.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                            child.status === 'CLOSED' ? 'bg-slate-100 text-slate-700' :
+                                                                'bg-yellow-100 text-yellow-700'
+                                                            }`}>{child.status}</span>
+                                                        <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {selected && (selected as any).parentId && (selected as any).parent && (
+                                    <div className="space-y-2 mt-4">
+                                        <Label>Part of Master File</Label>
+                                        <div className="bg-muted/20 p-3 rounded-md border text-sm flex justify-between items-center">
+                                            <span className="font-medium truncate pr-4">{(selected as any).parent.fileNumber} - {(selected as any).parent.subject}</span>
+                                            <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium bg-indigo-100 text-indigo-700">Master ({((selected as any).parent.status)})</span>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <Separator />
 
                                 {/* Action Buttons */}
-                                {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
+                                {!(selected as any)?.isMaster && ((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
                                     (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
                                     ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
                                         ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
@@ -615,9 +714,26 @@ const FileManagement = () => {
                                                     </div>
                                                     <div className="pb-2 min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="text-xs font-medium">{m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System"}</span>
-                                                            <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                                                            <span className="text-xs font-medium">{m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—"}</span>
+                                                            {(() => {
+                                                                const fromName = m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System";
+                                                                const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—";
+
+                                                                if (m.action === 'CREATE') {
+                                                                    return <span className="text-xs font-medium">{toName}</span>;
+                                                                }
+
+                                                                if (m.fromUser && m.toUser && m.fromUser.id === m.toUser.id) {
+                                                                    return <span className="text-xs font-medium">{fromName}</span>;
+                                                                }
+
+                                                                return (
+                                                                    <>
+                                                                        <span className="text-xs font-medium">{fromName}</span>
+                                                                        <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                                                                        <span className="text-xs font-medium">{toName}</span>
+                                                                    </>
+                                                                );
+                                                            })()}
                                                             <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-medium ${m.action === "APPROVE" ? "bg-green-50 text-green-700" :
                                                                 m.action === "RETURN" ? "bg-orange-50 text-orange-700" :
                                                                     m.action === "REJECT" ? "bg-red-50 text-red-700" :

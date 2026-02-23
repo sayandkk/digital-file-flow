@@ -12,7 +12,9 @@ import DocumentManagement from "./pages/DocumentManagement";
 import WorkflowTracking from "./pages/WorkflowTracking";
 import ArchiveManagement from "./pages/ArchiveManagement";
 import ReportsAnalytics from "./pages/ReportsAnalytics";
+import MasterFiles from "./pages/MasterFiles";
 import AdminSettings from "./pages/AdminSettings";
+import ProfileSettings from "./pages/ProfileSettings";
 import ClassificationManagement from "./pages/ClassificationManagement";
 import RequestManagement from "./pages/RequestManagement";
 import DashboardLayout from "./components/layout/DashboardLayout";
@@ -45,6 +47,7 @@ const App = () => (
             <Route index element={<Dashboard />} />
             <Route path="inward" element={<InwardManagement />} />
             <Route path="files" element={<FileManagement />} />
+            <Route path="master-files" element={<MasterFiles />} />
             <Route path="requests" element={<RequestManagement />} />
             <Route path="notes" element={<NotesManagement />} />
             <Route path="documents" element={<DocumentManagement />} />
@@ -53,6 +56,7 @@ const App = () => (
             <Route path="reports" element={<ReportsAnalytics />} />
             <Route path="users" element={<AdminSettings />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="profile" element={<ProfileSettings />} />
             <Route path="classifications" element={<ClassificationManagement />} />
           </Route>
           <Route path="*" element={<NotFound />} />

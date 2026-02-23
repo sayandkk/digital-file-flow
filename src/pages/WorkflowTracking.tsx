@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Search, RefreshCw, Download, ChevronRight, GitBranch, AlertCircle, Clock } from "lucide-react";
 import { filesApi } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 import type { FileRecord, FileMovement, MovementAction } from "@/lib/types";
 
 const actionColors: Record<MovementAction, string> = {
@@ -20,6 +21,7 @@ const actionColors: Record<MovementAction, string> = {
 };
 
 const WorkflowTracking = () => {
+    const { user } = useAuth();
     const [query, setQuery] = useState("");
     const [file, setFile] = useState<FileRecord | null>(null);
     const [movements, setMovements] = useState<FileMovement[]>([]);
@@ -100,10 +102,20 @@ const WorkflowTracking = () => {
                                 <div><p className="text-muted-foreground text-xs">File Number</p><p className="font-semibold">{file.fileNumber}</p></div>
                                 <div><p className="text-muted-foreground text-xs">Subject</p><p className="font-medium truncate">{file.subject}</p></div>
                                 <div><p className="text-muted-foreground text-xs">Status</p>
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${file.status === "APPROVED" ? "bg-green-100 text-green-700" :
-                                        file.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
-                                            file.status === "RETURNED" ? "bg-orange-100 text-orange-700" :
-                                                "bg-blue-100 text-blue-700"}`}>{file.status}</span>
+                                    {(() => {
+                                        const isOwner = file.currentOwnerId === user?.id;
+                                        const isActive = ['PENDING', 'FORWARDED', 'RETURNED'].includes(file.status);
+
+                                        if (isOwner && isActive) {
+                                            return <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 border-orange-200 border">Action Required</span>;
+                                        }
+
+                                        return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${file.status === "APPROVED" ? "bg-green-100 text-green-700" :
+                                                file.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
+                                                    file.status === "RETURNED" ? "bg-orange-100 text-orange-700" :
+                                                        "bg-blue-100 text-blue-700"
+                                            }`}>{file.status}</span>;
+                                    })()}
                                 </div>
                                 <div><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{file.department?.name || "—"}</p></div>
                             </div>
