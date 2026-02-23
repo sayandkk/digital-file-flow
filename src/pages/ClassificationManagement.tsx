@@ -173,10 +173,10 @@ const ClassificationManagement = () => {
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-2">
                         <Tag className="w-6 h-6 text-primary" />
-                        Classification Management
+                        Work Flow Creations
                     </h1>
                     <p className="text-muted-foreground text-sm mt-1">
-                        Define classifications and their forwarding routes. Custom classifications auto-route files to specified users in order.
+                        Define Work Flow Creations and their forwarding routes. Custom Work Flow Creations auto-route files to specified users in order.
                     </p>
                 </div>
                 <Button onClick={openCreate} className="flex items-center gap-2">

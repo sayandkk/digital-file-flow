@@ -6,7 +6,7 @@ import {
   FileText, Clock, CheckCircle2, RotateCcw, Archive, Plus, Inbox,
   Search, ArrowRight, TrendingUp, Users, AlertCircle, RefreshCw,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { dashboardApi, filesApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import type { FileRecord, FileStatus } from "@/lib/types";
@@ -21,6 +21,7 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     pending: 0,
     approved: 0,
@@ -79,9 +80,8 @@ const Dashboard = () => {
   ];
 
   const quickActions = [
-    { label: "New Inward", icon: Inbox, desc: "Register new inward entry", path: "/dashboard/inward" },
     { label: "Create File", icon: Plus, desc: "Start a new file", path: "/dashboard/files" },
-    { label: "Search Files", icon: Search, desc: "Find files & documents", path: "/dashboard/search" },
+    { label: "Search Files", icon: Search, desc: "Find files & track movements", path: "/dashboard/workflow" },
   ];
 
   return (
@@ -144,9 +144,17 @@ const Dashboard = () => {
               ) : (
                 <div className="space-y-3">
                   {recentFiles.map((file) => {
-                    const cfg = statusConfig[file.status] || { label: file.status, variant: "outline" as const };
+                    const isOwner = file.currentOwnerId === user?.id;
+                    const isActive = ['PENDING', 'FORWARDED', 'RETURNED'].includes(file.status);
+                    let cfg = statusConfig[file.status] || { label: file.status, variant: "outline" as const };
+
+                    if (isOwner && isActive) {
+                      cfg = { label: "Action Required", variant: "destructive" as const };
+                    }
+
                     return (
                       <div key={file.id}
+                        onClick={() => navigate('/dashboard/files', { state: { selectedFileId: file.id } })}
                         className="flex items-center justify-between p-3 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center shrink-0">

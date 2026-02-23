@@ -24,6 +24,7 @@ const navItems = [
   // { label: "Requests", icon: Inbox, path: "/dashboard/requests" },
   // { label: "Inward Register", icon: Inbox, path: "/dashboard/inward" },
   { label: "File Management", icon: FolderOpen, path: "/dashboard/files" },
+  { label: "Master Files", icon: ClipboardList, path: "/dashboard/master-files" },
   // { label: "Notes & Drafts", icon: ClipboardList, path: "/dashboard/notes" },
   // { label: "Documents", icon: FileText, path: "/dashboard/documents" },
   { label: "File Tracker", icon: GitBranch, path: "/dashboard/workflow" },
@@ -33,7 +34,7 @@ const navItems = [
 ];
 
 const deptHeadItems = [
-  { label: "Classifications", icon: Tag, path: "/dashboard/classifications" },
+  { label: "Work Flow Creations", icon: Tag, path: "/dashboard/classifications" },
   { label: "Manage Users", icon: Users, path: "/dashboard/users" },
 ];
 
