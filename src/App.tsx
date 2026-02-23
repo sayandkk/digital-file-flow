@@ -14,6 +14,7 @@ import ArchiveManagement from "./pages/ArchiveManagement";
 import ReportsAnalytics from "./pages/ReportsAnalytics";
 import AdminSettings from "./pages/AdminSettings";
 import ClassificationManagement from "./pages/ClassificationManagement";
+import RequestManagement from "./pages/RequestManagement";
 import DashboardLayout from "./components/layout/DashboardLayout";
 import NotFound from "./pages/NotFound";
 
@@ -44,6 +45,7 @@ const App = () => (
             <Route index element={<Dashboard />} />
             <Route path="inward" element={<InwardManagement />} />
             <Route path="files" element={<FileManagement />} />
+            <Route path="requests" element={<RequestManagement />} />
             <Route path="notes" element={<NotesManagement />} />
             <Route path="documents" element={<DocumentManagement />} />
             <Route path="workflow" element={<WorkflowTracking />} />

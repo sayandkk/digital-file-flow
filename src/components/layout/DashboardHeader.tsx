@@ -35,12 +35,12 @@ const DashboardHeader = () => {
 
       <div className="flex items-center gap-3">
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
+        {/* <Button variant="ghost" size="icon" className="relative">
           <Bell className="w-5 h-5 text-muted-foreground" />
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
             3
           </span>
-        </Button>
+        </Button> */}
 
         {/* User menu */}
         <DropdownMenu>
@@ -51,11 +51,11 @@ const DashboardHeader = () => {
               </div>
               <div className="hidden md:block text-left">
                 <p className="text-sm font-medium leading-none">{user.email}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <div className="text-xs text-muted-foreground mt-0.5">
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                     {roleLabels[user.role] || user.role}
                   </Badge>
-                </p>
+                </div>
               </div>
             </Button>
           </DropdownMenuTrigger>

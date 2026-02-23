@@ -21,21 +21,50 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const [stats, setStats] = useState({ pending: 0, approved: 0, returned: 0, archived: 0, filesProcessedThisWeek: 0, activeUsers: 0, overdueFiles: 0 });
+  const [stats, setStats] = useState({
+    pending: 0,
+    approved: 0,
+    returned: 0,
+    archived: 0,
+    filesProcessedThisWeek: 0,
+    activeUsers: 0,
+    overdueFiles: 0,
+    slaEscalationsOpen: 0,
+  });
   const [recentFiles, setRecentFiles] = useState<FileRecord[]>([]);
+  const [workflowStats, setWorkflowStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [statsRes, filesRes] = await Promise.all([
+        const [statsRes, filesRes, wfRes] = await Promise.all([
           dashboardApi.getStats().catch(() => ({ data: null })),
           filesApi.list({ limit: 5 }).catch(() => ({ data: [] })),
+          dashboardApi.getWorkflowStats().catch(() => ({ data: [] })),
         ]);
-        if (statsRes.data) setStats(statsRes.data);
+
+        if (statsRes.data) {
+          const s = statsRes.data as any;
+          const overview = s.overview || s;
+
+          setStats({
+            pending: overview.pendingFiles ?? overview.pending ?? 0,
+            approved: overview.approvedFiles ?? overview.approved ?? 0,
+            returned: overview.returnedFiles ?? overview.returned ?? 0,
+            archived: overview.archivedFiles ?? overview.archived ?? 0,
+            filesProcessedThisWeek: 0,
+            activeUsers: overview.totalUsers ?? 0,
+            overdueFiles: overview.overdueFiles ?? 0,
+            slaEscalationsOpen: overview.slaEscalationsOpen ?? 0,
+          });
+        }
         const d = filesRes.data;
         setRecentFiles(Array.isArray(d) ? d.slice(0, 5) : (d.data || []).slice(0, 5));
+
+        const wfData = wfRes.data;
+        setWorkflowStats(Array.isArray(wfData) ? wfData : []);
       } catch { }
       finally { setLoading(false); }
     };
@@ -46,7 +75,7 @@ const Dashboard = () => {
     { label: "Pending Files", value: stats.pending, change: "Awaiting action", icon: Clock, gradient: "bg-gradient-to-br from-warning/10 to-warning/5", iconColor: "text-warning", borderColor: "border-warning/20" },
     { label: "Approved Files", value: stats.approved, change: "Successfully closed", icon: CheckCircle2, gradient: "bg-gradient-to-br from-success/10 to-success/5", iconColor: "text-success", borderColor: "border-success/20" },
     { label: "Returned Files", value: stats.returned, change: "Needs attention", icon: RotateCcw, gradient: "bg-gradient-to-br from-destructive/10 to-destructive/5", iconColor: "text-destructive", borderColor: "border-destructive/20" },
-    { label: "Archived Files", value: stats.archived, change: "Total records", icon: Archive, gradient: "bg-gradient-to-br from-muted-foreground/10 to-muted-foreground/5", iconColor: "text-muted-foreground", borderColor: "border-muted/50" },
+    { label: "Overdue Files", value: stats.overdueFiles, change: "Past SLA due date", icon: AlertCircle, gradient: "bg-gradient-to-br from-warning/10 to-warning/5", iconColor: "text-warning", borderColor: "border-warning/30" },
   ];
 
   const quickActions = [
@@ -196,6 +225,33 @@ const Dashboard = () => {
               </div>
             </CardContent>
           </Card>
+
+          {workflowStats.length > 0 && (
+            <Card className="shadow-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-sans">Workflow Bottlenecks</CardTitle>
+                <CardDescription>Stages with the most pending files</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {workflowStats.slice(0, 5).map((s) => (
+                  <div
+                    key={s.stageId}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-medium">
+                        {(s.categoryName || "Uncategorized") + " – " + (s.role || "")}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Stage {s.stageOrder} · Avg age {Number(s.avgAgeHours || 0).toFixed(1)}h
+                      </span>
+                    </div>
+                    <Badge variant="outline">{s.pendingCount} pending</Badge>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

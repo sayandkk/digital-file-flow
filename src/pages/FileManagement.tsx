@@ -45,6 +45,9 @@ const FileManagement = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [workflowCategories, setWorkflowCategories] = useState<WorkflowCategory[]>([]);
     const [classifications, setClassifications] = useState<{ id: string, name: string }[]>([]);
+    const [priorityFilter, setPriorityFilter] = useState("ALL");
+    const [categoryFilter, setCategoryFilter] = useState("ALL");
+    const [confidentialityFilter, setConfidentialityFilter] = useState("ALL");
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [actionForm, setActionForm] = useState({ toUserId: "", remarks: "" });
@@ -53,7 +56,11 @@ const FileManagement = () => {
         description: "",
         classificationId: "",
         departmentId: "",
-        workflowCategoryId: ""
+        workflowCategoryId: "",
+        priority: "NORMAL",
+        confidentiality: "INTERNAL",
+        category: "OTHER",
+        dueDate: "",
     });
     const [submitting, setSubmitting] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -65,13 +72,21 @@ const FileManagement = () => {
     const fetchFiles = async () => {
         setLoading(true);
         try {
-            const res = await filesApi.list({ status: statusFilter === "ALL" ? undefined : statusFilter, search });
+            const params: any = {
+                status: statusFilter === "ALL" ? undefined : statusFilter,
+                search,
+            };
+            if (priorityFilter && priorityFilter !== "ALL") params.priority = priorityFilter;
+            if (categoryFilter && categoryFilter !== "ALL") params.category = categoryFilter;
+            if (confidentialityFilter && confidentialityFilter !== "ALL") params.confidentiality = confidentialityFilter;
+
+            const res = await filesApi.list(params);
             const data = res.data;
             setFiles(Array.isArray(data) ? data : data.data || []);
         } catch { setFiles([]); } finally { setLoading(false); }
     };
 
-    useEffect(() => { fetchFiles(); }, [statusFilter, search]);
+    useEffect(() => { fetchFiles(); }, [statusFilter, search, priorityFilter, categoryFilter, confidentialityFilter]);
 
     useEffect(() => {
         departmentsApi.list().then(r => setDepartments(r.data)).catch(() => { });
@@ -110,7 +125,11 @@ const FileManagement = () => {
                 description: "",
                 classificationId: "",
                 departmentId: "",
-                workflowCategoryId: ""
+                workflowCategoryId: "",
+                priority: "NORMAL",
+                confidentiality: "INTERNAL",
+                category: "OTHER",
+                dueDate: "",
             });
             fetchFiles();
         } catch (err: any) { setError(err?.response?.data?.message || "Failed to create file"); }
@@ -247,6 +266,50 @@ const FileManagement = () => {
                                 <TabsTrigger value="RETURNED">Returned</TabsTrigger>
                             </TabsList>
                         </Tabs>
+                        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                            <SelectTrigger className="w-[130px]">
+                                <SelectValue placeholder="Priority" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="ALL">All priorities</SelectItem>
+                                <SelectItem value="LOW">Low</SelectItem>
+                                <SelectItem value="NORMAL">Normal</SelectItem>
+                                <SelectItem value="HIGH">High</SelectItem>
+                                <SelectItem value="URGENT">Urgent</SelectItem>
+                                <SelectItem value="CRITICAL">Critical</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                            <SelectTrigger className="w-[150px]">
+                                <SelectValue placeholder="Category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="ALL">All categories</SelectItem>
+                                <SelectItem value="FINANCE">Finance</SelectItem>
+                                <SelectItem value="HR">HR</SelectItem>
+                                <SelectItem value="LEGAL">Legal</SelectItem>
+                                <SelectItem value="OPERATIONS">Operations</SelectItem>
+                                <SelectItem value="IT">IT</SelectItem>
+                                <SelectItem value="PROCUREMENT">Procurement</SelectItem>
+                                <SelectItem value="ADMIN">Admin</SelectItem>
+                                <SelectItem value="CUSTOMER_SERVICE">Customer Service</SelectItem>
+                                <SelectItem value="PROJECT">Project</SelectItem>
+                                <SelectItem value="OTHER">Other</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select value={confidentialityFilter} onValueChange={setConfidentialityFilter}>
+                            <SelectTrigger className="w-[150px]">
+                                <SelectValue placeholder="Confidentiality" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="ALL">All levels</SelectItem>
+                                <SelectItem value="PUBLIC">Public</SelectItem>
+                                <SelectItem value="INTERNAL">Internal</SelectItem>
+                                <SelectItem value="CONFIDENTIAL">Confidential</SelectItem>
+                                <SelectItem value="RESTRICTED">Restricted</SelectItem>
+                                <SelectItem value="SECRET">Secret</SelectItem>
+                            </SelectContent>
+                        </Select>
                         <Button variant="outline" size="icon" onClick={fetchFiles}><RefreshCw className="w-4 h-4" /></Button>
                     </div>
                 </CardContent>
@@ -293,7 +356,17 @@ const FileManagement = () => {
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0">
                                         <StatusBadge status={file.status} />
+                                        {file.priority && (
+                                            <Badge variant="outline" className="text-[10px] h-5">
+                                                {file.priority}
+                                            </Badge>
+                                        )}
                                         {file.currentStage && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">Stage {file.currentStage.stageOrder}</span>}
+                                        {file.dueDate && file.status === 'PENDING' && new Date(file.dueDate) < new Date() && (
+                                            <Badge variant="destructive" className="text-[10px] h-5">
+                                                Overdue
+                                            </Badge>
+                                        )}
                                         <span className="text-xs text-muted-foreground hidden sm:block">
                                             {new Date(file.createdAt).toLocaleDateString()}
                                         </span>
@@ -362,8 +435,9 @@ const FileManagement = () => {
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{selected?.department?.name}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created By</p><p className="font-medium">{selected?.createdBy?.firstName} {selected?.createdBy?.lastName}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "—"} {selected?.currentOwner?.lastName}</p></div>
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Classification</p><p className="font-medium">{(selected?.classification as any)?.name || String(selected?.classification)}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Workflow</p><p className="font-medium">{(selected?.classification as any)?.name || String(selected?.classification || "—")}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created Date</p><p className="font-medium">{selected && new Date(selected.createdAt).toLocaleDateString()}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Priority</p><p className="font-medium">{selected?.priority || "—"}</p></div>
                                 </div>
 
                                 {selected?.description && (
@@ -378,52 +452,64 @@ const FileManagement = () => {
                                 <Separator />
 
                                 {/* Action Buttons */}
-                                {(selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
-                                    <div>
-                                        <p className="text-sm font-medium mb-3">Available Actions</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {/* Forward: only for current owner, non-workflow files, non-DEPT_HEAD */}
-                                            {!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && (
-                                                <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
-                                                    onClick={() => { setShowAction("forward"); setError(""); }}>
-                                                    <Send className="w-3.5 h-3.5" /> {(selected?.status === "RETURNED") ? "Resubmit" : "Forward"}
-                                                </Button>
-                                            )}
-                                            {/* Approve: workflow stage match OR dept head who owns the file */}
-                                            {((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
-                                                (user?.role === 'DEPT_HEAD' && selected.currentOwnerId === user?.id)) && (
-                                                    <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-200 hover:bg-green-50"
-                                                        onClick={() => { setShowAction("approve"); setError(""); }}>
-                                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                                {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
+                                    (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
+                                    ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                        ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
+                                    (selected.currentOwnerId === user?.id)
+                                )) && (
+                                        <div>
+                                            <p className="text-sm font-medium mb-3">Available Actions</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {/* Forward: only for current owner, non-workflow files, non-DEPT_HEAD */}
+                                                {!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN' && (
+                                                    <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
+                                                        onClick={() => { setShowAction("forward"); setError(""); }}>
+                                                        <Send className="w-3.5 h-3.5" /> {(selected?.status === "RETURNED") ? "Resubmit" : "Forward"}
                                                     </Button>
                                                 )}
-                                            {/* Return: only current owner */}
-                                            {selected.currentOwnerId === user?.id && (
-                                                <Button size="sm" variant="outline" className="gap-1 text-orange-700 border-orange-200 hover:bg-orange-50"
-                                                    onClick={() => { setShowAction("return"); setError(""); }}>
-                                                    <RotateCcw className="w-3.5 h-3.5" /> Return
-                                                </Button>
-                                            )}
-                                            {/* Reject: workflow stage match OR dept head who owns the file */}
-                                            {((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
-                                                (user?.role === 'DEPT_HEAD' && selected.currentOwnerId === user?.id)) && (
-                                                    <Button size="sm" variant="outline" className="gap-1 text-red-700 border-red-200 hover:bg-red-50"
-                                                        onClick={() => { setShowAction("reject"); setError(""); }}>
-                                                        <XCircle className="w-3.5 h-3.5" /> Reject
+                                                {/* Approve: workflow stage match OR dept head of the file's department */}
+                                                {((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                    ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) && (
+                                                        <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-200 hover:bg-green-50"
+                                                            onClick={() => { setShowAction("approve"); setError(""); }}>
+                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                                                        </Button>
+                                                    )}
+                                                {/* Return: current owner OR dept head of the file's department */}
+                                                {(selected.currentOwnerId === user?.id || ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && selected.departmentId === user?.departmentId)) && (
+                                                    <Button size="sm" variant="outline" className="gap-1 text-orange-700 border-orange-200 hover:bg-orange-50"
+                                                        onClick={() => { setShowAction("return"); setError(""); }}>
+                                                        <RotateCcw className="w-3.5 h-3.5" /> Return
                                                     </Button>
                                                 )}
+                                                {/* Reject: workflow stage match OR dept head of the file's department */}
+                                                {((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                    ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) && (
+                                                        <Button size="sm" variant="outline" className="gap-1 text-red-700 border-red-200 hover:bg-red-50"
+                                                            onClick={() => { setShowAction("reject"); setError(""); }}>
+                                                            <XCircle className="w-3.5 h-3.5" /> Reject
+                                                        </Button>
+                                                    )}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
                             </TabsContent>
 
                             <TabsContent value="documents" className="mt-0">
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-center">
                                         <h3 className="text-sm font-medium">Attached Documents</h3>
-                                        <Button size="sm" variant="outline" className="gap-2" onClick={() => { setShowUpload(true); setError(""); }}>
-                                            <Upload className="w-4 h-4" /> Upload Version
-                                        </Button>
+                                        {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
+                                            (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
+                                            ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
+                                            (selected.currentOwnerId === user?.id)
+                                        )) && (
+                                                <Button size="sm" variant="outline" className="gap-2" onClick={() => { setShowUpload(true); setError(""); }}>
+                                                    <Upload className="w-4 h-4" /> Upload Version
+                                                </Button>
+                                            )}
                                     </div>
 
                                     {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
@@ -642,15 +728,28 @@ const FileManagement = () => {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Workflow Category (Optional)</Label>
-                            <Select value={createForm.workflowCategoryId || "no_workflow"} onValueChange={(v) => setCreateForm({ ...createForm, workflowCategoryId: v === "no_workflow" ? "" : v })}>
-                                <SelectTrigger><SelectValue placeholder="Select workflow category" /></SelectTrigger>
+                            <Label>Priority</Label>
+                            <Select value={createForm.priority} onValueChange={(v) => setCreateForm({ ...createForm, priority: v })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="no_workflow">None (Standard)</SelectItem>
-                                    {workflowCategories.map(wc => <SelectItem key={wc.id} value={wc.id}>{wc.name}</SelectItem>)}
+                                    <SelectItem value="LOW">Low</SelectItem>
+                                    <SelectItem value="NORMAL">Normal</SelectItem>
+                                    <SelectItem value="HIGH">High</SelectItem>
+                                    <SelectItem value="URGENT">Urgent</SelectItem>
+                                    <SelectItem value="CRITICAL">Critical</SelectItem>
                                 </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">Selecting a workflow triggers staged approvals.</p>
+                        </div>
+
+
+
+                        <div className="space-y-2">
+                            <Label>Due Date</Label>
+                            <Input
+                                type="date"
+                                value={createForm.dueDate}
+                                onChange={(e) => setCreateForm({ ...createForm, dueDate: e.target.value })}
+                            />
                         </div>
 
                         <div className="space-y-2">

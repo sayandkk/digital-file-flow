@@ -56,6 +56,13 @@ export interface FileRecord {
     currentOwner?: User;
     currentOwnerId?: string;
     approvals?: FileApproval[];
+    priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' | 'CRITICAL';
+    confidentiality?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED' | 'SECRET';
+    category?: 'FINANCE' | 'HR' | 'LEGAL' | 'OPERATIONS' | 'IT' | 'PROCUREMENT' | 'ADMIN' | 'CUSTOMER_SERVICE' | 'PROJECT' | 'OTHER';
+    tags?: string[];
+    dueDate?: string;
+    slaHours?: number;
+    completedAt?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -148,20 +155,54 @@ export interface Document {
     heading?: string;
 }
 
-export interface DashboardStats {
-    pending: number;
-    approved: number;
-    returned: number;
-    archived: number;
-    totalFiles: number;
-    filesProcessedThisWeek: number;
-    activeUsers: number;
-    overdueFiles: number;
-}
+export type RequestStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'IN_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'ON_HOLD'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
-export interface PaginatedResponse<T> {
-    data: T[];
-    total: number;
-    page: number;
-    limit: number;
+export type RequestType =
+  | 'IT_SUPPORT'
+  | 'PURCHASE_REQUEST'
+  | 'HR_REQUEST'
+  | 'LEAVE_REQUEST'
+  | 'LEGAL_CASE'
+  | 'CUSTOMER_COMPLAINT'
+  | 'PROJECT_PROPOSAL'
+  | 'INVOICE_APPROVAL'
+  | 'CONTRACT_REVIEW'
+  | 'GENERAL_REQUEST'
+  | 'OTHER';
+
+export interface RequestRecord {
+  id: string;
+  requestNumber: string;
+  title: string;
+  description: string;
+  requestType: RequestType;
+  status: RequestStatus;
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' | 'CRITICAL';
+  confidentiality:
+    | 'PUBLIC'
+    | 'INTERNAL'
+    | 'CONFIDENTIAL'
+    | 'RESTRICTED'
+    | 'SECRET';
+  category:
+    | 'FINANCE'
+    | 'HR'
+    | 'LEGAL'
+    | 'OPERATIONS'
+    | 'IT'
+    | 'PROCUREMENT'
+    | 'ADMIN'
+    | 'CUSTOMER_SERVICE'
+    | 'PROJECT'
+    | 'OTHER';
+  createdAt: string;
+  createdBy?: User;
 }

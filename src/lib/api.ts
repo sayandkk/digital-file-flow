@@ -45,6 +45,7 @@ export const authApi = {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export const dashboardApi = {
     getStats: () => api.get('/dashboard/stats'),
+    getWorkflowStats: () => api.get('/dashboard/workflow-stats'),
 };
 
 // ── Files ─────────────────────────────────────────────────────────────────────
@@ -58,6 +59,16 @@ export const filesApi = {
     reject: (id: string, data: any) => api.post(`/files/${id}/reject`, data),
     close: (id: string, data: any) => api.post(`/files/${id}/close`, data),
     getMovements: (id: string) => api.get(`/files/${id}/movements`),
+};
+
+// ── Requests ─────────────────────────────────────────────────────────────────-
+export const requestsApi = {
+    list: () => api.get('/requests'),
+    get: (id: string) => api.get(`/requests/${id}`),
+    create: (data: any) => api.post('/requests', data),
+    update: (id: string, data: any) => api.put(`/requests/${id}`, data),
+    remove: (id: string) => api.delete(`/requests/${id}`),
+    convertToFile: (id: string, data: any) => api.post(`/requests/${id}/convert-to-file`, data),
 };
 
 // ── Inward ────────────────────────────────────────────────────────────────────
