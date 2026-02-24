@@ -100,31 +100,35 @@ const FileManagement = () => {
     }, []);
 
     const openFile = async (file: FileRecord) => {
-        let fullFile = file;
+        // Optimistically set the selected file based on available data immediately
+        setSelected(file);
 
-        // If file is missing full relations or fields (e.g., clicked from a Master File's sub-file list), fetch it fully
-        // The sub-files only contain id, subject, fileNumber, status
-        if (!fullFile.createdAt || !(fullFile as any).department) {
-            try {
-                const res = await filesApi.get(fullFile.id);
-                fullFile = { ...fullFile, ...(res.data?.data || res.data) };
-            } catch (err) {
+        let fullFile = file;
+        const fetchFileDetails = (!fullFile.createdAt || !(fullFile as any).department)
+            ? filesApi.get(fullFile.id).catch(err => {
                 console.error("Failed to load full file details:", err);
                 toast.error("Could not load full file details");
-            }
-        }
+                return { data: null };
+            })
+            : Promise.resolve({ data: fullFile });
 
-        setSelected(fullFile);
         try {
-            const [movRes, docRes] = await Promise.all([
-                filesApi.getMovements(fullFile.id),
-                documentsApi.findByFile(fullFile.id)
+            // Fetch everything in parallel
+            const [fileRes, movRes, docRes] = await Promise.all([
+                fetchFileDetails,
+                filesApi.getMovements(fullFile.id).catch(() => ({ data: [] })),
+                documentsApi.findByFile(fullFile.id).catch(() => ({ data: [] }))
             ]);
-            setMovements(movRes.data);
+
+            if (fileRes.data) {
+                fullFile = { ...fullFile, ...(fileRes.data?.data || fileRes.data) };
+                setSelected(fullFile);
+            }
+
+            setMovements(movRes.data || []);
             setDocuments(Array.isArray(docRes.data) ? docRes.data : []);
-        } catch {
-            setMovements([]);
-            setDocuments([]);
+        } catch (err) {
+            console.error("Error loading file data:", err);
         }
     };
 
