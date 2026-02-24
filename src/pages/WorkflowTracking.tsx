@@ -111,9 +111,9 @@ const WorkflowTracking = () => {
                                         }
 
                                         return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${file.status === "APPROVED" ? "bg-green-100 text-green-700" :
-                                                file.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
-                                                    file.status === "RETURNED" ? "bg-orange-100 text-orange-700" :
-                                                        "bg-blue-100 text-blue-700"
+                                            file.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
+                                                file.status === "RETURNED" ? "bg-orange-100 text-orange-700" :
+                                                    "bg-blue-100 text-blue-700"
                                             }`}>{file.status}</span>;
                                     })()}
                                 </div>

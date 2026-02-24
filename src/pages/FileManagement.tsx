@@ -564,7 +564,7 @@ const FileManagement = () => {
                                                 {!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN' && (
                                                     <Button size="sm" variant="outline" className="gap-1 text-blue-700 border-blue-200 hover:bg-blue-50"
                                                         onClick={() => { setShowAction("forward"); setError(""); }}>
-                                                        <Send className="w-3.5 h-3.5" /> {(selected?.status === "RETURNED") ? "Resubmit" : "Forward"}
+                                                        <Send className="w-3.5 h-3.5" /> {(selected?.status === "RETURNED") ? "Resubmit" : (selected?.classification as any)?.type === 'CUSTOM' ? "Approve" : "Forward"}
                                                     </Button>
                                                 )}
                                                 {/* Approve: workflow stage match OR dept head of the file's department */}
@@ -883,7 +883,11 @@ const FileManagement = () => {
             {/* Action Dialog */}
             <Dialog open={!!showAction} onOpenChange={() => setShowAction(null)}>
                 <DialogContent className="max-w-md">
-                    <DialogHeader><DialogTitle>{showAction ? actionLabels[showAction] : ""}</DialogTitle></DialogHeader>
+                    <DialogHeader><DialogTitle>
+                        {showAction === "forward" && (selected as any)?.classification?.type === "CUSTOM"
+                            ? "Approve File"
+                            : showAction ? actionLabels[showAction] : ""}
+                    </DialogTitle></DialogHeader>
                     <form onSubmit={handleAction} className="space-y-4">
                         {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
 
@@ -916,9 +920,9 @@ const FileManagement = () => {
                                 </div>
                             )}
                         {showAction === "forward" && (selected as any)?.classification?.type === "CUSTOM" && (
-                            <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2.5">
-                                <span className="shrink-0">🔀</span>
-                                <span>This file uses the <strong>{(selected as any)?.classification?.name}</strong> classification. It will be auto-routed to the next person in the predefined route.</span>
+                            <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2.5">
+                                <span className="shrink-0 mt-0.5">✅</span>
+                                <span>This file uses the <strong>{(selected as any)?.classification?.name}</strong> predefined route. Approving it will automatically advance the file to the next person.</span>
                             </div>
                         )}
                         <div className="space-y-2">

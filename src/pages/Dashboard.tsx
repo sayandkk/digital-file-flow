@@ -51,7 +51,7 @@ const Dashboard = () => {
           const overview = s.overview || s;
 
           setStats({
-            pending: overview.pendingFiles ?? overview.pending ?? 0,
+            pending: s.personal?.myPendingFiles ?? overview.pendingFiles ?? overview.pending ?? 0,
             approved: overview.approvedFiles ?? overview.approved ?? 0,
             returned: overview.returnedFiles ?? overview.returned ?? 0,
             archived: overview.archivedFiles ?? overview.archived ?? 0,
