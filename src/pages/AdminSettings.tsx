@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Settings, Users, Building2, Plus, Edit2, UserX, RefreshCw, AlertCircle, Shield, GitBranch, Trash2, ArrowRight } from "lucide-react";
+import { Settings, Users, Building2, Plus, Edit2, UserX, RefreshCw, AlertCircle, Shield, GitBranch, Trash2, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { usersApi, departmentsApi, workflowApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import type { User, Department, Role, UserStatus, WorkflowCategory, WorkflowStage } from "@/lib/types";
@@ -54,6 +54,7 @@ const AdminSettings = () => {
 
     // Forms & Dialogs
     const [showUserForm, setShowUserForm] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [showDeptForm, setShowDeptForm] = useState(false);
     const [editingDept, setEditingDept] = useState<Department | null>(null);
@@ -426,7 +427,28 @@ const AdminSettings = () => {
                         <Input placeholder="First Name" value={userForm.firstName} onChange={e => setUserForm({ ...userForm, firstName: e.target.value })} required />
                         <Input placeholder="Last Name" value={userForm.lastName} onChange={e => setUserForm({ ...userForm, lastName: e.target.value })} required />
                         <Input placeholder="Email" type="email" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} required />
-                        {!editingUser && <Input placeholder="Password" type="password" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} required />}
+
+                        {!editingUser && (
+                            <div className="relative">
+                                <Input
+                                    placeholder="Password"
+                                    type={showPassword ? "text" : "password"}
+                                    value={userForm.password}
+                                    onChange={e => setUserForm({ ...userForm, password: e.target.value })}
+                                    required
+                                    className="pr-10"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
+                                    aria-label="Toggle password visibility"
+                                >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
+                        )}
+
                         <Select value={userForm.role} onValueChange={(v: Role) => setUserForm({ ...userForm, role: v })}>
                             <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
                             <SelectContent>

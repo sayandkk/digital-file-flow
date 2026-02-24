@@ -59,6 +59,7 @@ export const filesApi = {
     reject: (id: string, data: any) => api.post(`/files/${id}/reject`, data),
     close: (id: string, data: any) => api.post(`/files/${id}/close`, data),
     getMovements: (id: string) => api.get(`/files/${id}/movements`),
+    update: (id: string, data: any) => api.patch(`/files/${id}`, data),
 };
 
 // ── Requests ─────────────────────────────────────────────────────────────────-

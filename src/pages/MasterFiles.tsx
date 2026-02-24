@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { filesApi, departmentsApi } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,15 +13,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FolderOpen, Plus, RefreshCw, AlertCircle, ChevronRight } from "lucide-react";
+import { FolderOpen, Plus, RefreshCw, AlertCircle, ChevronRight, Edit } from "lucide-react";
 import { toast } from "sonner";
 import type { FileRecord as File } from "@/lib/types";
 
 export default function MasterFiles() {
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const canEdit = user?.role === "ADMIN" || user?.role === "DEPT_HEAD";
+
     const [files, setFiles] = useState<File[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editId, setEditId] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
 
@@ -53,13 +59,13 @@ export default function MasterFiles() {
         }
     };
 
-    const fetchAvailableFiles = async (deptId?: string) => {
+    const fetchAvailableFiles = async (deptId?: string, currentEditId?: string | null) => {
         try {
             // Fetch normal files to be grouped
             const params: any = { isMaster: false };
             if (deptId) params.departmentId = deptId;
             const res = await filesApi.list(params);
-            const pFiles = res.data.data.filter((f: any) => !f.parentId); // strictly ungrouped
+            const pFiles = res.data.data.filter((f: any) => !f.parentId || (currentEditId && f.parentId === currentEditId));
             setAvailableFiles(pFiles);
         } catch (err) {
             console.error(err);
@@ -71,17 +77,20 @@ export default function MasterFiles() {
     }, []);
 
     useEffect(() => {
-        if (showCreate) {
+        if (!showCreate) {
             setChildFileIds([]);
+            setCreateForm({ subject: "", description: "", departmentId: "", priority: "NORMAL" });
+            setIsEditing(false);
+            setEditId(null);
             setError("");
         }
     }, [showCreate]);
 
     useEffect(() => {
         if (showCreate) {
-            fetchAvailableFiles(createForm.departmentId);
+            fetchAvailableFiles(createForm.departmentId, editId);
         }
-    }, [showCreate, createForm.departmentId]);
+    }, [showCreate, createForm.departmentId, editId]);
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -99,15 +108,34 @@ export default function MasterFiles() {
                 childFileIds
             };
 
-            await filesApi.create(payload);
-            toast.success("Master File created successfully");
+            if (isEditing && editId) {
+                await filesApi.update(editId, payload);
+                toast.success("Master File updated successfully");
+            } else {
+                await filesApi.create(payload);
+                toast.success("Master File created successfully");
+            }
             setShowCreate(false);
             fetchMasterFiles();
         } catch (err: any) {
-            setError(err?.response?.data?.message || "Failed to create master file");
+            setError(err?.response?.data?.message || `Failed to ${isEditing ? 'update' : 'create'} master file`);
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const handleEditClick = (e: React.MouseEvent, file: any) => {
+        e.stopPropagation();
+        setCreateForm({
+            subject: file.subject || "",
+            description: file.description || "",
+            departmentId: file.departmentId || "",
+            priority: file.priority || "NORMAL",
+        });
+        setChildFileIds(file.children?.map((c: any) => c.id) || []);
+        setEditId(file.id);
+        setIsEditing(true);
+        setShowCreate(true);
     };
 
     return (
@@ -188,9 +216,21 @@ export default function MasterFiles() {
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="flex items-center text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <span className="text-xs mr-1">Open File</span>
-                                            <ChevronRight className="w-4 h-4" />
+                                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {canEdit && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 px-2 text-muted-foreground hover:text-primary z-10"
+                                                    onClick={(e) => handleEditClick(e, file)}
+                                                >
+                                                    <Edit className="w-4 h-4 mr-1" /> Edit
+                                                </Button>
+                                            )}
+                                            <div className="flex items-center text-muted-foreground ml-2">
+                                                <span className="text-xs mr-1">Open File</span>
+                                                <ChevronRight className="w-4 h-4" />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -203,7 +243,7 @@ export default function MasterFiles() {
             <Dialog open={showCreate} onOpenChange={setShowCreate}>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>Create Master File</DialogTitle>
+                        <DialogTitle>{isEditing ? "Edit Master File" : "Create Master File"}</DialogTitle>
                     </DialogHeader>
                     <form onSubmit={handleCreate} className="space-y-5 py-2">
                         {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
@@ -282,7 +322,7 @@ export default function MasterFiles() {
                         <DialogFooter>
                             <Button variant="outline" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
                             <Button type="submit" disabled={submitting || childFileIds.length === 0}>
-                                {submitting ? "Creating..." : "Create Master File"}
+                                {submitting ? (isEditing ? "Updating..." : "Creating...") : (isEditing ? "Save Changes" : "Create Master File")}
                             </Button>
                         </DialogFooter>
                     </form>
