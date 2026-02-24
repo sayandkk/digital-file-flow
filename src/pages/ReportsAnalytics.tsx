@@ -57,7 +57,7 @@ const ReportsAnalytics = () => {
         { label: "Total Files", value: files.length, icon: FileText, color: "text-primary" },
         { label: "Approved", value: files.filter(f => f.status === "APPROVED").length, icon: TrendingUp, color: "text-green-600" },
         { label: "Pending", value: files.filter(f => f.status === "PENDING").length, icon: Clock, color: "text-yellow-600" },
-        { label: "Active Users", value: stats?.activeUsers ?? "—", icon: Users, color: "text-blue-600" },
+        { label: "Active Users", value: stats?.overview?.totalUsers ?? stats?.totalUsers ?? "—", icon: Users, color: "text-blue-600" },
     ];
 
     const exportCSV = () => {
