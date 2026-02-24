@@ -326,7 +326,7 @@ const FileManagement = () => {
                                 <SelectItem value="CRITICAL">Critical</SelectItem>
                             </SelectContent>
                         </Select>
-                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        {/* <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                             <SelectTrigger className="w-[150px]">
                                 <SelectValue placeholder="Category" />
                             </SelectTrigger>
@@ -343,8 +343,8 @@ const FileManagement = () => {
                                 <SelectItem value="PROJECT">Project</SelectItem>
                                 <SelectItem value="OTHER">Other</SelectItem>
                             </SelectContent>
-                        </Select>
-                        <Select value={confidentialityFilter} onValueChange={setConfidentialityFilter}>
+                        </Select> */}
+                        {/* <Select value={confidentialityFilter} onValueChange={setConfidentialityFilter}>
                             <SelectTrigger className="w-[150px]">
                                 <SelectValue placeholder="Confidentiality" />
                             </SelectTrigger>
@@ -356,7 +356,7 @@ const FileManagement = () => {
                                 <SelectItem value="RESTRICTED">Restricted</SelectItem>
                                 <SelectItem value="SECRET">Secret</SelectItem>
                             </SelectContent>
-                        </Select>
+                        </Select> */}
                         <Button variant="outline" size="icon" onClick={fetchFiles}><RefreshCw className="w-4 h-4" /></Button>
                     </div>
                 </CardContent>
