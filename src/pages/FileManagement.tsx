@@ -283,6 +283,19 @@ const FileManagement = () => {
             link.remove();
         } catch {
             // Error handling
+            toast.error("Failed to download document");
+        }
+    };
+
+    const handleViewDocument = async (doc: Document) => {
+        try {
+            const res = await documentsApi.download(doc.id);
+            const blob = new Blob([res.data], { type: doc.mimeType });
+            const url = window.URL.createObjectURL(blob);
+            window.open(url, '_blank');
+            setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+        } catch {
+            toast.error("Failed to open document");
         }
     };
 
@@ -716,7 +729,7 @@ const FileManagement = () => {
                                                 <div key={heading} className="space-y-2">
                                                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{heading}</h4>
                                                     {docs.map((doc) => (
-                                                        <div key={doc.id} className="border rounded-md bg-card hover:bg-muted/30 overflow-hidden">
+                                                        <div key={doc.id} className="border rounded-md bg-card hover:bg-muted/30 overflow-hidden cursor-pointer" onClick={() => handleViewDocument(doc)}>
                                                             <div className="flex items-center justify-between p-3">
                                                                 <div className="flex items-center gap-3 overflow-hidden">
                                                                     <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0 text-primary font-bold text-xs">
@@ -732,12 +745,12 @@ const FileManagement = () => {
                                                                 </div>
                                                                 <div className="flex items-center gap-1">
                                                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                                                        onClick={() => handleDownload(doc)} title="Download">
+                                                                        onClick={(e) => { e.stopPropagation(); handleDownload(doc); }} title="Download">
                                                                         <Download className="w-4 h-4" />
                                                                     </Button>
                                                                     {selected?.status === 'PENDING' && (
                                                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                                                            onClick={() => handleDeleteDocument(doc.id)} title="Delete">
+                                                                            onClick={(e) => { e.stopPropagation(); handleDeleteDocument(doc.id); }} title="Delete">
                                                                             <Trash2 className="w-4 h-4" />
                                                                         </Button>
                                                                     )}
