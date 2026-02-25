@@ -128,6 +128,7 @@ export const usersApi = {
     update: (id: string, data: any) => api.patch(`/users/${id}`, data),
     deactivate: (id: string) => api.patch(`/users/${id}/status`, { status: 'INACTIVE' }),
     reactivate: (id: string) => api.patch(`/users/${id}/status`, { status: 'ACTIVE' }),
+    delete: (id: string) => api.delete(`/users/${id}`),
 };
 
 // ── Departments ───────────────────────────────────────────────────────────────

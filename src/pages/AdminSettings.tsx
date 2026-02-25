@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -158,17 +159,30 @@ const AdminSettings = () => {
         catch (err: any) { alert(err?.response?.data?.message || "Failed to reactivate"); }
     };
 
-    const promptUserAction = (user: User, action: 'deactivate' | 'reactivate') => {
+    const handleDeleteUser = async (user: User) => {
+        try {
+            await usersApi.delete(user.id);
+            toast.success("User deleted successfully.");
+            fetchUsers();
+        } catch (err: any) {
+            alert(err?.response?.data?.message || "Failed to delete user.");
+        }
+    };
+
+    const promptUserAction = (user: User, action: 'deactivate' | 'reactivate' | 'delete') => {
         setConfirmAction({
             isOpen: true,
-            title: action === 'deactivate' ? "Deactivate User" : "Reactivate User",
+            title: action === 'deactivate' ? "Deactivate User" : action === 'delete' ? "Delete User" : "Reactivate User",
             description: action === 'deactivate'
                 ? `Are you sure you want to deactivate ${user.firstName} ${user.lastName}? They will no longer be able to log in.`
-                : `Are you sure you want to reactivate ${user.firstName} ${user.lastName}? They will regain access to the system.`,
-            actionText: action === 'deactivate' ? "Deactivate" : "Reactivate",
-            actionVariant: action === 'deactivate' ? "destructive" : "default",
+                : action === 'delete'
+                    ? `Are you sure you want to permanently delete ${user.firstName} ${user.lastName}? This action cannot be undone.`
+                    : `Are you sure you want to reactivate ${user.firstName} ${user.lastName}? They will regain access to the system.`,
+            actionText: action === 'deactivate' ? "Deactivate" : action === 'delete' ? "Delete" : "Reactivate",
+            actionVariant: action === 'deactivate' || action === 'delete' ? "destructive" : "default",
             onConfirm: () => {
                 if (action === 'deactivate') handleDeactivate(user);
+                else if (action === 'delete') handleDeleteUser(user);
                 else handleReactivate(user);
                 setConfirmAction(prev => ({ ...prev, isOpen: false }));
             }
@@ -308,10 +322,11 @@ const AdminSettings = () => {
                                                     <td className="py-3 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${roleColors[u.role]}`}>{roleLabels[u.role]}</span></td>
                                                     <td className="py-3 px-3 text-muted-foreground">{u.department?.name || "—"}</td>
                                                     <td className="py-3 px-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[u.status]}`}>{u.status}</span></td>
-                                                    <td className="py-3 px-3 text-right">
+                                                    <td className="py-3 px-3 text-right whitespace-nowrap">
                                                         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingUser(u); setUserForm({ ...u, password: "", departmentId: u.departmentId || "", designation: u.designation || "", employeeId: u.employeeId || "" }); setShowUserForm(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
-                                                        {u.status === "ACTIVE" && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => promptUserAction(u, 'deactivate')} title="Deactivate"><UserX className="w-3.5 h-3.5" /></Button>}
+                                                        {u.status === "ACTIVE" && <Button size="icon" variant="ghost" className="h-7 w-7 text-orange-600" onClick={() => promptUserAction(u, 'deactivate')} title="Deactivate"><UserX className="w-3.5 h-3.5" /></Button>}
                                                         {u.status === "INACTIVE" && <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600" onClick={() => promptUserAction(u, 'reactivate')} title="Reactivate"><RefreshCw className="w-3.5 h-3.5" /></Button>}
+                                                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => promptUserAction(u, 'delete')} title="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>
                                                     </td>
                                                 </tr>
                                             ))}
