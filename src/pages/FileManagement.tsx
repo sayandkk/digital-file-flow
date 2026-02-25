@@ -44,6 +44,9 @@ const FileManagement = () => {
     const [documents, setDocuments] = useState<Document[]>([]);
     const [showCreate, setShowCreate] = useState(false);
     const [showAction, setShowAction] = useState<string | null>(null);
+    const [isPullMode, setIsPullMode] = useState(false);
+    const [selectedPullFiles, setSelectedPullFiles] = useState<string[]>([]);
+    const [showPullAction, setShowPullAction] = useState(false);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [workflowCategories, setWorkflowCategories] = useState<WorkflowCategory[]>([]);
@@ -209,6 +212,30 @@ const FileManagement = () => {
         finally { setSubmitting(false); }
     };
 
+    const handlePullFiles = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (selectedPullFiles.length === 0 || !actionForm.toUserId) return;
+        setSubmitting(true); setError("");
+        try {
+            await Promise.all(selectedPullFiles.map(fileId =>
+                filesApi.forward(fileId, {
+                    toUserId: actionForm.toUserId,
+                    remarks: actionForm.remarks || "Pulled and reassigned by Department Head."
+                })
+            ));
+            toast.success(`${selectedPullFiles.length} files reassigned successfully.`);
+            setShowPullAction(false);
+            setIsPullMode(false);
+            setSelectedPullFiles([]);
+            setActionForm({ toUserId: "", remarks: "" });
+            fetchFiles();
+        } catch (err: any) {
+            setError(err?.response?.data?.message || "Failed to reassign files.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     const handleUpload = async () => {
         if (!uploadForm.file || !selected) return;
         setUploading(true);
@@ -299,6 +326,26 @@ const FileManagement = () => {
                     <Plus className="w-4 h-4" /> Create File
                 </Button>
             </div>
+
+            {user?.role === "DEPT_HEAD" && (
+                <div className="flex justify-end gap-2 pr-1">
+                    <Button
+                        variant={isPullMode ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                            setIsPullMode(!isPullMode);
+                            setSelectedPullFiles([]);
+                        }}
+                    >
+                        {isPullMode ? "Cancel Pull Mode" : "Pull Files (Reassign)"}
+                    </Button>
+                    {isPullMode && selectedPullFiles.length > 0 && (
+                        <Button size="sm" onClick={() => setShowPullAction(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                            Reassign ({selectedPullFiles.length})
+                        </Button>
+                    )}
+                </div>
+            )}
 
             {/* Filters */}
             <Card className="shadow-card">
@@ -395,15 +442,34 @@ const FileManagement = () => {
                                         <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
                                             <FolderOpen className="w-5 h-5 text-primary" />
                                         </div>
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className="font-medium text-sm truncate">{file.subject}</p>
-                                                {file.workflowCategory && <Badge variant="outline" className="text-[10px] h-5">{file.workflowCategory.name}</Badge>}
-                                                {(file as any).isMaster && <Badge variant="default" className="text-[10px] h-5 bg-indigo-500 hover:bg-indigo-600">Master File</Badge>}
+                                        <div className="min-w-0 flex items-center gap-3">
+                                            {isPullMode && (
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 cursor-pointer mt-0.5 shrink-0"
+                                                    checked={selectedPullFiles.includes(file.id)}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        if (e.target.checked) setSelectedPullFiles([...selectedPullFiles, file.id]);
+                                                        else setSelectedPullFiles(selectedPullFiles.filter(id => id !== file.id));
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    disabled={
+                                                        !(file.status === 'PENDING' || file.status === 'FORWARDED' || file.status === 'RETURNED') ||
+                                                        file.currentOwnerId === user?.id
+                                                    }
+                                                />
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="font-medium text-sm truncate">{file.subject}</p>
+                                                    {file.workflowCategory && <Badge variant="outline" className="text-[10px] h-5">{file.workflowCategory.name}</Badge>}
+                                                    {(file as any).isMaster && <Badge variant="default" className="text-[10px] h-5 bg-indigo-500 hover:bg-indigo-600">Master File</Badge>}
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {file.fileNumber} · {file.department?.name || "—"}
+                                                </p>
                                             </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                {file.fileNumber} · {file.department?.name || "—"}
-                                            </p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0">
@@ -937,6 +1003,43 @@ const FileManagement = () => {
                         <DialogFooter>
                             <Button variant="outline" type="button" onClick={() => setShowAction(null)}>Cancel</Button>
                             <Button type="submit" disabled={submitting}>{submitting ? "Processing..." : "Confirm"}</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Pull File Action Dialog */}
+            <Dialog open={showPullAction} onOpenChange={setShowPullAction}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader><DialogTitle>Reassign {selectedPullFiles.length} File(s)</DialogTitle></DialogHeader>
+                    <form onSubmit={handlePullFiles} className="space-y-4">
+                        {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+                        <div className="space-y-2">
+                            <Label>Assign To *</Label>
+                            <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
+                                <SelectTrigger><SelectValue placeholder="Select user in your department" /></SelectTrigger>
+                                <SelectContent>
+                                    {users.filter(u => {
+                                        // Must be in the same department, not the current logged in user (dept head)
+                                        if (u.id === user?.id) return false;
+                                        if (u.departmentId !== user?.department?.id && u.department?.id !== user?.department?.id) return false;
+
+                                        // Must not be the current owner of any of the selected pull files
+                                        const isCurrentOwner = files.some(f => selectedPullFiles.includes(f.id) && f.currentOwnerId === u.id);
+                                        return !isCurrentOwner;
+                                    }).map(u => (
+                                        <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Remarks</Label>
+                            <Textarea value={actionForm.remarks} onChange={(e) => setActionForm({ ...actionForm, remarks: e.target.value })} placeholder="Add standard remarks (e.g. Previous assignee on leave)..." rows={3} />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" type="button" onClick={() => setShowPullAction(false)}>Cancel</Button>
+                            <Button type="submit" disabled={submitting}>{submitting ? "Processing..." : "Reassign Files"}</Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>
