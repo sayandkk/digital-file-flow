@@ -186,6 +186,16 @@ const AdminSettings = () => {
         finally { setSubmitting(false); }
     };
 
+    const handleDeleteDept = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this department? This action cannot be undone.")) return;
+        try {
+            await departmentsApi.delete(id);
+            fetchDepts();
+        } catch (err: any) {
+            alert(err?.response?.data?.message || "Failed to delete department");
+        }
+    };
+
     const handleWorkflowSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setSubmitting(true); setError("");
         try {
@@ -335,7 +345,10 @@ const AdminSettings = () => {
                                                     <p className="font-medium">{d.name}</p>
                                                     <p className="text-xs text-muted-foreground">{d.code}</p>
                                                 </div>
-                                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingDept(d); setDeptForm({ name: d.name, code: d.code, description: d.description || "" }); setShowDeptForm(true); }}><Edit2 className="w-3 h-3" /></Button>
+                                                <div className="flex gap-1">
+                                                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingDept(d); setDeptForm({ name: d.name, code: d.code, description: d.description || "" }); setShowDeptForm(true); }}><Edit2 className="w-3 h-3" /></Button>
+                                                    <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteDept(d.id)}><Trash2 className="w-3 h-3" /></Button>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
