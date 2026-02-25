@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi, classificationsApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
-import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document } from "@/lib/types";
+import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document, Priority } from "@/lib/types";
 
 const statusConfig: Record<FileStatus, { label: string; color: string; icon: any }> = {
     PENDING: { label: "Pending", color: "bg-yellow-100 text-yellow-800", icon: Clock },
@@ -29,6 +29,14 @@ const statusConfig: Record<FileStatus, { label: string; color: string; icon: any
     CLOSED: { label: "Closed", color: "bg-slate-100 text-slate-700", icon: Archive },
     ARCHIVED: { label: "Archived", color: "bg-purple-100 text-purple-800", icon: Archive },
     DISPOSED: { label: "Disposed", color: "bg-gray-100 text-gray-600", icon: Archive },
+};
+
+const priorityColors: Record<string, string> = {
+    LOW: "bg-slate-100 text-slate-700 border-slate-200",
+    NORMAL: "bg-blue-100 text-blue-700 border-blue-200",
+    HIGH: "bg-orange-100 text-orange-700 border-orange-200",
+    URGENT: "bg-red-100 text-red-700 border-red-200",
+    CRITICAL: "bg-red-200 text-red-900 border-red-300",
 };
 
 const FileManagement = () => {
@@ -475,7 +483,7 @@ const FileManagement = () => {
                                     <div className="flex items-center gap-3 shrink-0">
                                         <StatusBadge file={file} />
                                         {file.priority && (
-                                            <Badge variant="outline" className="text-[10px] h-5">
+                                            <Badge variant="outline" className={`text-[10px] h-5 ${priorityColors[file.priority] || "bg-slate-100 text-slate-700"}`}>
                                                 {file.priority}
                                             </Badge>
                                         )}
@@ -572,7 +580,16 @@ const FileManagement = () => {
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "—"} {selected?.currentOwner?.lastName}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Workflow</p><p className="font-medium">{(selected?.classification as any)?.name || String(selected?.classification || "—")}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created Date</p><p className="font-medium">{selected && new Date(selected.createdAt).toLocaleDateString()}</p></div>
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Priority</p><p className="font-medium">{selected?.priority || "—"}</p></div>
+                                    <div className="space-y-1">
+                                        <p className="text-muted-foreground text-xs">Priority</p>
+                                        <div>
+                                            {selected?.priority ? (
+                                                <Badge variant="outline" className={`text-[10px] h-5 ${priorityColors[selected.priority] || "bg-slate-100 text-slate-700"}`}>
+                                                    {selected.priority}
+                                                </Badge>
+                                            ) : "—"}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {selected?.description && (
@@ -708,7 +725,8 @@ const FileManagement = () => {
                                                                     <div className="min-w-0">
                                                                         <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
                                                                         <p className="text-xs text-muted-foreground">
-                                                                            {(doc.size / 1024).toFixed(1)} KB · {new Date(doc.createdAt).toLocaleDateString()}
+                                                                            {(doc.size / 1024).toFixed(1)} KB · {new Date(doc.createdAt).toLocaleString()}
+                                                                            {doc.uploadedBy && ` · Uploaded by ${doc.uploadedBy.firstName} ${doc.uploadedBy.lastName}`}
                                                                         </p>
                                                                     </div>
                                                                 </div>
