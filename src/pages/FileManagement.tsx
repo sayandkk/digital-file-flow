@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,11 @@ import { Separator } from "@/components/ui/separator";
 import {
     FolderOpen, Plus, Search, RefreshCw, Eye, ChevronRight, ChevronLeft,
     CheckCircle2, RotateCcw, XCircle, Send, AlertCircle, Clock, Archive, GitBranch,
-    FileText, Upload, Download, Trash2, Paperclip
+    FileText, Upload, Download, Trash2, Paperclip, Link2
 } from "lucide-react";
-import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi, classificationsApi } from "@/lib/api";
+import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi, classificationsApi, inwardApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
-import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document, Priority } from "@/lib/types";
+import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document, Priority, Inward } from "@/lib/types";
 
 const statusConfig: Record<FileStatus, { label: string; color: string; icon: any }> = {
     PENDING: { label: "Pending", color: "bg-yellow-100 text-yellow-800", icon: Clock },
@@ -50,6 +50,7 @@ const FileManagement = () => {
     const [selected, setSelected] = useState<FileRecord | null>(null);
     const [movements, setMovements] = useState<FileMovement[]>([]);
     const [documents, setDocuments] = useState<Document[]>([]);
+    const [inwardDocuments, setInwardDocuments] = useState<Document[]>([]);
     const [showCreate, setShowCreate] = useState(false);
     const [showAction, setShowAction] = useState<string | null>(null);
     const [isPullMode, setIsPullMode] = useState(false);
@@ -59,6 +60,7 @@ const FileManagement = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [workflowCategories, setWorkflowCategories] = useState<WorkflowCategory[]>([]);
     const [classifications, setClassifications] = useState<{ id: string, name: string }[]>([]);
+    const [inwards, setInwards] = useState<Inward[]>([]);
     const [priorityFilter, setPriorityFilter] = useState("ALL");
     const [categoryFilter, setCategoryFilter] = useState("ALL");
     const [confidentialityFilter, setConfidentialityFilter] = useState("ALL");
@@ -71,6 +73,7 @@ const FileManagement = () => {
         classificationId: "",
         departmentId: "",
         workflowCategoryId: "",
+        initialDocument: null as File | null,
         priority: "NORMAL",
         confidentiality: "INTERNAL",
         category: "OTHER",
@@ -80,6 +83,15 @@ const FileManagement = () => {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
     const [showUpload, setShowUpload] = useState(false);
+    const [showLinkInward, setShowLinkInward] = useState(false);
+    // Multi-inward selection state: inwardId -> selected doc IDs (empty array = none selected, doc IDs = specific docs)
+    const [inwardDocSelections, setInwardDocSelections] = useState<Record<string, string[]>>({});
+    // Cache of fetched docs per inward to avoid re-fetching
+    const [inwardDocsCache, setInwardDocsCache] = useState<Record<string, Document[]>>({});
+    // Which inwards are expanded (showing their document list)
+    const [expandedInwards, setExpandedInwards] = useState<string[]>([]);
+    const [linkSubmitting, setLinkSubmitting] = useState(false);
+    const [linkError, setLinkError] = useState("");
     const [uploadForm, setUploadForm] = useState({ file: null as File | null, description: "", heading: "" });
     const [isNewHeading, setIsNewHeading] = useState(false);
 
@@ -108,6 +120,7 @@ const FileManagement = () => {
         usersApi.list({ directory: true }).then(r => { const d = r.data; setUsers(Array.isArray(d) ? d : d.data || []); }).catch(() => { });
         workflowApi.listCategories().then(r => setWorkflowCategories(Array.isArray(r.data) ? r.data : [])).catch(() => { });
         classificationsApi.list().then(r => setClassifications(r.data)).catch(() => { });
+        inwardApi.list().then(r => { const d = r.data; setInwards(Array.isArray(d) ? d : d.data || []) }).catch(() => { });
     }, []);
 
     const openFile = async (file: FileRecord) => {
@@ -134,7 +147,17 @@ const FileManagement = () => {
             if (fileRes.data) {
                 fullFile = { ...fullFile, ...(fileRes.data?.data || fileRes.data) };
                 setSelected(fullFile);
+
+                if (fullFile.inwardId || fullFile.inward?.id) {
+                    const inwId = fullFile.inwardId || fullFile.inward?.id;
+                    documentsApi.findByInward(inwId).then(inwDocRes => {
+                        setInwardDocuments(Array.isArray(inwDocRes.data) ? inwDocRes.data : []);
+                    }).catch(() => setInwardDocuments([]));
+                } else {
+                    setInwardDocuments([]);
+                }
             }
+
 
             setMovements(movRes.data || []);
             setDocuments(Array.isArray(docRes.data) ? docRes.data : []);
@@ -165,8 +188,22 @@ const FileManagement = () => {
             const payload = { ...createForm };
             if (!payload.workflowCategoryId) delete (payload as any).workflowCategoryId;
             if (!payload.classificationId) delete (payload as any).classificationId;
+            delete (payload as any).initialDocument;
 
-            await filesApi.create(payload);
+            const res = await filesApi.create(payload);
+            const newFileId = res.data?.id;
+
+            // Upload initial document if provided
+            if (createForm.initialDocument && newFileId) {
+                const formData = new FormData();
+                formData.append('file', createForm.initialDocument);
+                await documentsApi.upload(formData, {
+                    fileId: newFileId,
+                    description: "Initial Document",
+                    heading: "Main Document"
+                });
+            }
+
             toast.success("File created successfully");
             setShowCreate(false);
             setCreateForm({
@@ -175,6 +212,7 @@ const FileManagement = () => {
                 classificationId: "",
                 departmentId: "",
                 workflowCategoryId: "",
+                initialDocument: null,
                 priority: "NORMAL",
                 confidentiality: "INTERNAL",
                 category: "OTHER",
@@ -196,7 +234,7 @@ const FileManagement = () => {
                     comments: actionForm.remarks
                 });
             } else {
-                // Standard actions — only include toUserId when it's set (approve/reject don't need it)
+                // Standard actions Ã¢â‚¬â€ only include toUserId when it's set (approve/reject don't need it)
                 const payload = actionForm.toUserId
                     ? { ...actionForm }
                     : { remarks: actionForm.remarks };
@@ -215,6 +253,7 @@ const FileManagement = () => {
             setSelected(null);
             setMovements([]);
             setDocuments([]);
+            setInwardDocuments([]);
             fetchFiles();
         } catch (err: any) { setError(err?.response?.data?.message || "Action failed"); }
         finally { setSubmitting(false); }
@@ -241,6 +280,52 @@ const FileManagement = () => {
             setError(err?.response?.data?.message || "Failed to reassign files.");
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleLinkInward = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selected) return;
+
+        const totalSelected = Object.values(inwardDocSelections).flat().length;
+        if (totalSelected === 0) {
+            setLinkError("Please select at least one document to import.");
+            return;
+        }
+
+        setLinkSubmitting(true);
+        setLinkError("");
+        try {
+            // Upload all selected documents from all inwards in parallel
+            await Promise.all(
+                Object.entries(inwardDocSelections).flatMap(([inwardId, docIds]) => {
+                    const inwardEntry = inwards.find(i => i.id === inwardId);
+                    const inwardLabel = inwardEntry
+                        ? `Imported from Inward: ${inwardEntry.inwardNumber} - ${inwardEntry.subject || 'No subject'}`
+                        : "Imported from Inward Entry";
+                    return docIds.map(async (docId) => {
+                        const docRes = await documentsApi.get(docId);
+                        const docData = docRes.data;
+                        const downloadRes = await documentsApi.download(docData.id);
+                        const blob = new Blob([downloadRes.data], { type: docData.mimeType });
+                        const file = new File([blob], docData.originalName || docData.name || "Inward_Document", { type: docData.mimeType });
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        await documentsApi.upload(formData, {
+                            fileId: selected.id,
+                            description: inwardLabel,
+                            heading: "Inward Document"
+                        });
+                    });
+                })
+            );
+            toast.success(`${totalSelected} document(s) imported successfully`);
+            setShowLinkInward(false);
+            openFile(selected);
+        } catch (err: any) {
+            setLinkError(err?.response?.data?.message || "Failed to import documents");
+        } finally {
+            setLinkSubmitting(false);
         }
     };
 
@@ -488,7 +573,7 @@ const FileManagement = () => {
                                                     {(file as any).isMaster && <Badge variant="default" className="text-[10px] h-5 bg-indigo-500 hover:bg-indigo-600">Master File</Badge>}
                                                 </div>
                                                 <p className="text-xs text-muted-foreground">
-                                                    {file.fileNumber} · {file.department?.name || "—"}
+                                                    {file.fileNumber} Ã‚Â· {file.department?.name || "Ã¢â‚¬â€"}
                                                 </p>
                                             </div>
                                         </div>
@@ -519,7 +604,7 @@ const FileManagement = () => {
             </Card>
 
             {/* File Detail Dialog */}
-            <Dialog open={!!selected} onOpenChange={() => { setSelected(null); setMovements([]); setDocuments([]); }}>
+            <Dialog open={!!selected} onOpenChange={() => { setSelected(null); setMovements([]); setDocuments([]); setInwardDocuments([]); }}>
                 <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto flex flex-col p-0 gap-0">
                     <div className="p-6 pb-2">
                         <DialogHeader>
@@ -570,7 +655,7 @@ const FileManagement = () => {
                                 <TabsTrigger value="overview" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Overview</TabsTrigger>
                                 {!(selected as any)?.isMaster && (
                                     <>
-                                        <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Documents <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{documents.length}</Badge></TabsTrigger>
+                                        <TabsTrigger value="documents" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">Documents <Badge variant="secondary" className="ml-2 text-[10px] h-5 px-1">{documents.length + inwardDocuments.length}</Badge></TabsTrigger>
                                         <TabsTrigger value="remarks" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">
                                             Remarks
                                             {movements.filter(m => m.remarks).length > 0 && (
@@ -590,8 +675,8 @@ const FileManagement = () => {
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Status</p>{selected && <StatusBadge file={selected} />}</div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{selected?.department?.name}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created By</p><p className="font-medium">{selected?.createdBy?.firstName} {selected?.createdBy?.lastName}</p></div>
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "—"} {selected?.currentOwner?.lastName}</p></div>
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Workflow</p><p className="font-medium">{(selected?.classification as any)?.name || String(selected?.classification || "—")}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "Ã¢â‚¬â€"} {selected?.currentOwner?.lastName}</p></div>
+                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Workflow</p><p className="font-medium">{(selected?.classification as any)?.name || String(selected?.classification || "Ã¢â‚¬â€")}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created Date</p><p className="font-medium">{selected && new Date(selected.createdAt).toLocaleDateString()}</p></div>
                                     <div className="space-y-1">
                                         <p className="text-muted-foreground text-xs">Priority</p>
@@ -600,10 +685,37 @@ const FileManagement = () => {
                                                 <Badge variant="outline" className={`text-[10px] h-5 ${priorityColors[selected.priority] || "bg-slate-100 text-slate-700"}`}>
                                                     {selected.priority}
                                                 </Badge>
-                                            ) : "—"}
+                                            ) : "Ã¢â‚¬â€"}
                                         </div>
                                     </div>
                                 </div>
+
+                                {selected?.inward && (
+                                    <div className="space-y-3 mt-4 p-4 bg-amber-50/50 border border-amber-200 rounded-lg">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Paperclip className="w-4 h-4 text-amber-600" />
+                                            <h4 className="text-sm font-semibold text-amber-900">Linked Inward Entry</h4>
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                            <div>
+                                                <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Inward No</p>
+                                                <p className="font-medium text-amber-950">{selected.inward.inwardNumber}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Sender</p>
+                                                <p className="font-medium text-amber-950">{selected.inward.senderName}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Received Date</p>
+                                                <p className="font-medium text-amber-950">{new Date(selected.inward.receivedDate).toLocaleDateString()}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Subject</p>
+                                                <p className="font-medium text-amber-950 truncate" title={selected.inward.subject}>{selected.inward.subject}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {selected?.description && (
                                     <div className="space-y-2">
@@ -697,8 +809,7 @@ const FileManagement = () => {
 
                             <TabsContent value="documents" className="mt-0">
                                 <div className="space-y-4">
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="text-sm font-medium">Attached Documents</h3>
+                                    <div className="flex items-center gap-2">
                                         {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
                                             (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
                                             ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
@@ -709,17 +820,71 @@ const FileManagement = () => {
                                                     <Upload className="w-4 h-4" /> Upload Version
                                                 </Button>
                                             )}
+                                        <Button size="sm" variant="outline" className="gap-2" onClick={() => setShowLinkInward(true)}>
+                                            <Link2 className="w-4 h-4" /> Import Inward Docs
+                                        </Button>
                                     </div>
 
                                     {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
 
-                                    {documents.length === 0 ? (
+                                    {documents.length === 0 && inwardDocuments.length === 0 ? (
                                         <div className="border border-dashed rounded-lg p-8 text-center text-muted-foreground">
                                             <Paperclip className="w-8 h-8 mx-auto mb-2 opacity-30" />
                                             <p>No documents attached</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
+                                            {/* Render Inward Documents First */}
+                                            {inwardDocuments.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between mb-4 mt-2">
+                                                        <h4 className="text-xs font-semibold text-amber-900 uppercase tracking-wider">Inward Document(s)</h4>
+                                                        {(selected as any)?.inwardId && (
+                                                            <div className="flex items-center gap-2">
+                                                                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowLinkInward(true)}>
+                                                                    <Link2 className="w-3.5 h-3.5 mr-1.5" /> Change Inward
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {inwardDocuments.map((doc) => (
+                                                        <div key={doc.id} className="border border-amber-200 rounded-md bg-amber-50/50 hover:bg-amber-100/50 overflow-hidden cursor-pointer" onClick={() => handleViewDocument(doc)}>
+                                                            <div className="flex items-center justify-between p-3">
+                                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                                    <div className="w-8 h-8 rounded bg-amber-100 flex items-center justify-center shrink-0 text-amber-700 font-bold text-xs">
+                                                                        v{doc.version}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-sm font-medium text-amber-950 truncate">{doc.originalName || doc.name}</p>
+                                                                        <p className="text-xs text-amber-700/80">
+                                                                            {(doc.size / 1024).toFixed(1)} KB {'\u00b7'} {new Date(doc.createdAt).toLocaleString()}
+                                                                            {doc.uploadedBy && ` · Uploaded by ${doc.uploadedBy.firstName} ${doc.uploadedBy.lastName}`}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-700 hover:text-amber-900"
+                                                                        onClick={(e) => { e.stopPropagation(); handleDownload(doc); }} title="Download">
+                                                                        <Download className="w-4 h-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2 border border-dashed border-amber-200 bg-amber-50/30 p-4 rounded-lg flex items-center justify-between">
+                                                    <div>
+                                                        <h4 className="text-xs font-semibold text-amber-900 uppercase tracking-wider mb-0.5">Link an Inward Entry</h4>
+                                                        <p className="text-xs text-amber-900/60">Attach an inward file to associate its documents here automatically.</p>
+                                                    </div>
+                                                    <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => { setLinkInwardId("none"); setShowLinkInward(true); }}>
+                                                        <Link2 className="w-3.5 h-3.5 mr-1.5" /> Select Inward
+                                                    </Button>
+                                                </div>
+                                            )}
+
+                                            {/* Render File Documents */}
                                             {Object.entries(documents.reduce((acc, doc) => {
                                                 const h = doc.heading || "General Documents";
                                                 if (!acc[h]) acc[h] = [];
@@ -738,7 +903,7 @@ const FileManagement = () => {
                                                                     <div className="min-w-0">
                                                                         <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
                                                                         <p className="text-xs text-muted-foreground">
-                                                                            {(doc.size / 1024).toFixed(1)} KB · {new Date(doc.createdAt).toLocaleString()}
+                                                                            {(doc.size / 1024).toFixed(1)} KB {'\u00b7'} {new Date(doc.createdAt).toLocaleString()}
                                                                             {doc.uploadedBy && ` · Uploaded by ${doc.uploadedBy.firstName} ${doc.uploadedBy.lastName}`}
                                                                         </p>
                                                                     </div>
@@ -757,10 +922,17 @@ const FileManagement = () => {
                                                                 </div>
                                                             </div>
                                                             {doc.description && (
-                                                                <div className="border-t bg-blue-50/50 px-3 py-2">
-                                                                    <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Remarks</p>
-                                                                    <p className="text-xs text-blue-800">{doc.description}</p>
-                                                                </div>
+                                                                doc.description.startsWith('Imported from Inward:') ? (
+                                                                    <div className="border-t bg-amber-50/60 px-3 py-1.5 flex items-center gap-2">
+                                                                        <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wide bg-amber-100 px-1.5 py-0.5 rounded shrink-0">Inward Source</span>
+                                                                        <p className="text-xs text-amber-800 truncate">{doc.description.replace('Imported from Inward: ', '')}</p>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="border-t bg-blue-50/50 px-3 py-2">
+                                                                        <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Remarks</p>
+                                                                        <p className="text-xs text-blue-800">{doc.description}</p>
+                                                                    </div>
+                                                                )
                                                             )}
                                                         </div>
                                                     ))}
@@ -817,7 +989,7 @@ const FileManagement = () => {
                                                         <div className="flex items-center gap-2 flex-wrap">
                                                             {(() => {
                                                                 const fromName = m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System";
-                                                                const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—";
+                                                                const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "Ã¢â‚¬â€";
 
                                                                 if (m.action === 'CREATE') {
                                                                     return <span className="text-xs font-medium">{toName}</span>;
@@ -850,7 +1022,7 @@ const FileManagement = () => {
                                 </div>
                             </TabsContent>
 
-                            {/* ── Remarks Tab ──────────────────────────────── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ Remarks Tab Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             <TabsContent value="remarks" className="mt-0">
                                 <div className="space-y-4">
                                     <h3 className="text-sm font-medium">Remarks History</h3>
@@ -880,7 +1052,7 @@ const FileManagement = () => {
                                                                     </span>
                                                                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                                                                     <span className="text-sm text-muted-foreground">
-                                                                        {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—"}
+                                                                        {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "Ã¢â‚¬â€"}
                                                                     </span>
                                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${c.badge}`}>
                                                                         {m.action}
@@ -911,10 +1083,10 @@ const FileManagement = () => {
                         <Button variant="outline" onClick={() => { setSelected(null); setMovements([]); setDocuments([]); }}>Close</Button>
                     </DialogFooter>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Create File Dialog */}
-            <Dialog open={showCreate} onOpenChange={setShowCreate}>
+            < Dialog open={showCreate} onOpenChange={setShowCreate} >
                 <DialogContent className="max-w-lg">
                     <DialogHeader><DialogTitle>Create New File</DialogTitle></DialogHeader>
                     <form onSubmit={handleCreate} className="space-y-4">
@@ -958,7 +1130,13 @@ const FileManagement = () => {
                             </Select>
                         </div>
 
-
+                        <div className="space-y-2">
+                            <Label>Initial Document</Label>
+                            <Input
+                                type="file"
+                                onChange={(e) => setCreateForm({ ...createForm, initialDocument: e.target.files?.[0] ?? null })}
+                            />
+                        </div>
 
                         <div className="space-y-2">
                             <Label>Due Date</Label>
@@ -979,10 +1157,10 @@ const FileManagement = () => {
                         </DialogFooter>
                     </form>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Action Dialog */}
-            <Dialog open={!!showAction} onOpenChange={() => setShowAction(null)}>
+            < Dialog open={!!showAction} onOpenChange={() => setShowAction(null)}>
                 <DialogContent className="max-w-md">
                     <DialogHeader><DialogTitle>
                         {showAction === "forward" && (selected as any)?.classification?.type === "CUSTOM"
@@ -1022,7 +1200,7 @@ const FileManagement = () => {
                             )}
                         {showAction === "forward" && (selected as any)?.classification?.type === "CUSTOM" && (
                             <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2.5">
-                                <span className="shrink-0 mt-0.5">✅</span>
+                                <span className="shrink-0 mt-0.5">Ã¢Å“â€¦</span>
                                 <span>This file uses the <strong>{(selected as any)?.classification?.name}</strong> predefined route. Approving it will automatically advance the file to the next person.</span>
                             </div>
                         )}
@@ -1037,10 +1215,10 @@ const FileManagement = () => {
                         </DialogFooter>
                     </form>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Pull File Action Dialog */}
-            <Dialog open={showPullAction} onOpenChange={setShowPullAction}>
+            < Dialog open={showPullAction} onOpenChange={setShowPullAction} >
                 <DialogContent className="max-w-md">
                     <DialogHeader><DialogTitle>Reassign {selectedPullFiles.length} File(s)</DialogTitle></DialogHeader>
                     <form onSubmit={handlePullFiles} className="space-y-4">
@@ -1074,10 +1252,10 @@ const FileManagement = () => {
                         </DialogFooter>
                     </form>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Upload Document Dialog */}
-            <Dialog open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) { setUploadForm({ file: null, description: "", heading: "" }); setError(""); setIsNewHeading(false); } }}>
+            < Dialog open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) { setUploadForm({ file: null, description: "", heading: "" }); setError(""); setIsNewHeading(false); } }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Upload Document</DialogTitle>
@@ -1163,9 +1341,146 @@ const FileManagement = () => {
                         </DialogFooter>
                     </form>
                 </DialogContent>
+            </Dialog >
+
+            {/* Multi-Inward Document Import Dialog */}
+            <Dialog open={showLinkInward} onOpenChange={(open) => {
+                setShowLinkInward(open);
+                if (!open) { setLinkError(""); }  // Keep selections so they persist when re-opened
+            }}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Import Inward Documents</DialogTitle>
+                        <DialogDescription>Expand inward entries below to browse and check documents to import into this file.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleLinkInward} className="space-y-3">
+                        {linkError && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {linkError}</div>}
+
+                        {/* Summary bar */}
+                        {Object.values(inwardDocSelections).flat().length > 0 && (
+                            <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-md px-3 py-2">
+                                <p className="text-sm text-primary font-medium">
+                                    {Object.values(inwardDocSelections).flat().length} document(s) selected
+                                </p>
+                                <button type="button" className="text-xs text-destructive underline" onClick={() => setInwardDocSelections({})}>
+                                    Clear all
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Scrollable inward accordion list */}
+                        <div className="max-h-[52vh] overflow-y-auto rounded-md border divide-y">
+                            {inwards.length === 0 ? (
+                                <div className="p-6 text-center text-sm text-muted-foreground">No inward entries available.</div>
+                            ) : inwards.map(inw => {
+                                const isExpanded = expandedInwards.includes(inw.id);
+                                const docs = inwardDocsCache[inw.id] || [];
+                                const selectedIds = inwardDocSelections[inw.id] || [];
+
+                                const toggleExpand = async () => {
+                                    if (isExpanded) {
+                                        setExpandedInwards(prev => prev.filter(id => id !== inw.id));
+                                    } else {
+                                        setExpandedInwards(prev => [...prev, inw.id]);
+                                        if (!inwardDocsCache[inw.id]) {
+                                            try {
+                                                const res = await documentsApi.findByInward(inw.id);
+                                                const fetched = Array.isArray(res.data) ? res.data : [];
+                                                setInwardDocsCache(prev => ({ ...prev, [inw.id]: fetched }));
+                                            } catch {
+                                                setInwardDocsCache(prev => ({ ...prev, [inw.id]: [] }));
+                                            }
+                                        }
+                                    }
+                                };
+
+                                const toggleDoc = (docId: string, checked: boolean) => {
+                                    setInwardDocSelections(prev => {
+                                        const existing = prev[inw.id] || [];
+                                        return { ...prev, [inw.id]: checked ? [...existing, docId] : existing.filter(id => id !== docId) };
+                                    });
+                                };
+
+                                const toggleAllDocs = (e: React.MouseEvent) => {
+                                    e.stopPropagation();
+                                    const allSelected = selectedIds.length === docs.length && docs.length > 0;
+                                    setInwardDocSelections(prev => ({ ...prev, [inw.id]: allSelected ? [] : docs.map(d => d.id) }));
+                                };
+
+                                return (
+                                    <div key={inw.id}>
+                                        {/* Inward header row */}
+                                        <div
+                                            className={`flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-muted/40 transition-colors select-none ${selectedIds.length > 0 ? 'bg-primary/5' : ''}`}
+                                            onClick={toggleExpand}
+                                        >
+                                            <ChevronRight className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">{inw.inwardNumber} - {inw.subject || 'No subject'}</p>
+                                                <p className="text-xs text-muted-foreground">{inw.source || inw.type}</p>
+                                            </div>
+                                            {selectedIds.length > 0 && (
+                                                <span className="text-xs font-semibold bg-primary text-primary-foreground px-2 py-0.5 rounded-full shrink-0">
+                                                    {selectedIds.length} selected
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Expandable document list */}
+                                        {isExpanded && (
+                                            <div className="bg-muted/10 border-t">
+                                                {docs.length === 0 ? (
+                                                    <p className="text-xs text-muted-foreground italic px-10 py-3">No documents in this inward entry.</p>
+                                                ) : (
+                                                    <>
+                                                        <div className="flex items-center justify-between px-10 py-1.5 border-b border-border/50 bg-muted/20">
+                                                            <p className="text-xs text-muted-foreground">{selectedIds.length} of {docs.length} selected</p>
+                                                            <button type="button" className="text-xs text-primary underline" onClick={toggleAllDocs}>
+                                                                {selectedIds.length === docs.length ? 'Deselect All' : 'Select All'}
+                                                            </button>
+                                                        </div>
+                                                        {docs.map(doc => (
+                                                            <label
+                                                                key={doc.id}
+                                                                className={`flex items-center gap-3 px-10 py-2.5 cursor-pointer hover:bg-muted/40 border-b last:border-b-0 transition-colors ${selectedIds.includes(doc.id) ? 'bg-primary/5' : ''}`}
+                                                                onClick={e => e.stopPropagation()}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="h-4 w-4 accent-primary shrink-0"
+                                                                    checked={selectedIds.includes(doc.id)}
+                                                                    onChange={e => toggleDoc(doc.id, e.target.checked)}
+                                                                />
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-medium truncate">{doc.originalName || doc.name}</p>
+                                                                    <p className="text-xs text-muted-foreground">{(doc.size / 1024).toFixed(1)} KB</p>
+                                                                </div>
+                                                            </label>
+                                                        ))}
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <DialogFooter>
+                            <Button variant="outline" type="button" onClick={() => setShowLinkInward(false)}>Cancel</Button>
+                            <Button type="submit" disabled={linkSubmitting || Object.values(inwardDocSelections).flat().length === 0}>
+                                {linkSubmitting
+                                    ? "Importing..."
+                                    : (() => { const n = Object.values(inwardDocSelections).flat().length; return n === 0 ? "Select documents" : `Import ${n} Doc${n !== 1 ? 's' : ''}`; })()
+                                }
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 };
 
 export default FileManagement;
+

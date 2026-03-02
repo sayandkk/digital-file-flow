@@ -74,10 +74,10 @@ export const requestsApi = {
 
 // ── Inward ────────────────────────────────────────────────────────────────────
 export const inwardApi = {
-    list: (params?: any) => api.get('/inward', { params }),
-    get: (id: string) => api.get(`/inward/${id}`),
-    create: (data: any) => api.post('/inward', data),
-    linkToFile: (id: string, fileId: string) => api.patch(`/inward/${id}/link-file`, { fileId }),
+    list: (params?: any) => api.get('/inwards', { params }),
+    get: (id: string) => api.get(`/inwards/${id}`),
+    create: (data: any) => api.post('/inwards', data),
+    linkToFile: (id: string, fileId: string) => api.patch(`/inwards/${id}/link-file`, { fileId }),
 };
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
