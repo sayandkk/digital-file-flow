@@ -66,7 +66,8 @@ const FileManagement = () => {
     const [confidentialityFilter, setConfidentialityFilter] = useState("ALL");
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [actionForm, setActionForm] = useState({ toUserId: "", remarks: "" });
+    const [actionForm, setActionForm] = useState({ toUserId: "", remarks: "", adhocUserId: "" });
+    const [isAdhocEnabled, setIsAdhocEnabled] = useState(false);
     const [createForm, setCreateForm] = useState({
         subject: "",
         description: "",
@@ -234,10 +235,11 @@ const FileManagement = () => {
                     comments: actionForm.remarks
                 });
             } else {
-                // Standard actions Ã¢â‚¬â€ only include toUserId when it's set (approve/reject don't need it)
-                const payload = actionForm.toUserId
-                    ? { ...actionForm }
-                    : { remarks: actionForm.remarks };
+                // Standard actions — only include toUserId/adhocUserId when set
+                const payload: any = { remarks: actionForm.remarks };
+                if (actionForm.toUserId) payload.toUserId = actionForm.toUserId;
+                if (actionForm.adhocUserId && isAdhocEnabled) payload.adhocUserId = actionForm.adhocUserId;
+
                 if (showAction === "forward") await filesApi.forward(selected.id, payload);
                 else if (showAction === "approve") await filesApi.approve(selected.id, payload);
                 else if (showAction === "return") await filesApi.return(selected.id, payload);
@@ -248,7 +250,8 @@ const FileManagement = () => {
 
             toast.success(`File ${showAction === 'return' ? 'returned' : showAction + 'd'} successfully`);
             setShowAction(null);
-            setActionForm({ toUserId: "", remarks: "" });
+            setActionForm({ toUserId: "", remarks: "", adhocUserId: "" });
+            setIsAdhocEnabled(false);
             // Close the file detail dialog and refresh the list
             setSelected(null);
             setMovements([]);
@@ -274,7 +277,7 @@ const FileManagement = () => {
             setShowPullAction(false);
             setIsPullMode(false);
             setSelectedPullFiles([]);
-            setActionForm({ toUserId: "", remarks: "" });
+            setActionForm({ toUserId: "", remarks: "", adhocUserId: "" });
             fetchFiles();
         } catch (err: any) {
             setError(err?.response?.data?.message || "Failed to reassign files.");
@@ -690,6 +693,20 @@ const FileManagement = () => {
                                     </div>
                                 </div>
 
+                                {(selected as any)?.adhocNextUser && (
+                                    <div className="mt-4 p-3 bg-amber-50/80 border border-amber-200 rounded-lg flex items-center justify-between shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-amber-100 text-amber-600 p-2 rounded-full shadow-inner">
+                                                <RefreshCw className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-amber-900 leading-none mb-1">Ad-hoc Review Active</p>
+                                                <p className="text-xs text-amber-700/80">When approved, this file will automatically return to the main route: <strong>{(selected as any).adhocNextUser.firstName} {(selected as any).adhocNextUser.lastName}</strong>.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {selected?.inward && (
                                     <div className="space-y-3 mt-4 p-4 bg-amber-50/50 border border-amber-200 rounded-lg">
                                         <div className="flex items-center gap-2 mb-2">
@@ -820,9 +837,16 @@ const FileManagement = () => {
                                                     <Upload className="w-4 h-4" /> Upload Version
                                                 </Button>
                                             )}
-                                        <Button size="sm" variant="outline" className="gap-2" onClick={() => setShowLinkInward(true)}>
-                                            <Link2 className="w-4 h-4" /> Import Inward Docs
-                                        </Button>
+                                        {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
+                                            (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
+                                            ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
+                                            (selected.currentOwnerId === user?.id)
+                                        )) && (
+                                                <Button size="sm" variant="outline" className="gap-2" onClick={() => setShowLinkInward(true)}>
+                                                    <Link2 className="w-4 h-4" /> Import Inward Docs
+                                                </Button>
+                                            )}
                                     </div>
 
                                     {error && <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
@@ -841,9 +865,16 @@ const FileManagement = () => {
                                                         <h4 className="text-xs font-semibold text-amber-900 uppercase tracking-wider">Inward Document(s)</h4>
                                                         {(selected as any)?.inwardId && (
                                                             <div className="flex items-center gap-2">
-                                                                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowLinkInward(true)}>
-                                                                    <Link2 className="w-3.5 h-3.5 mr-1.5" /> Change Inward
-                                                                </Button>
+                                                                {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
+                                                                    (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
+                                                                    ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                                        ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
+                                                                    (selected.currentOwnerId === user?.id)
+                                                                )) && (
+                                                                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowLinkInward(true)}>
+                                                                            <Link2 className="w-3.5 h-3.5 mr-1.5" /> Change Inward
+                                                                        </Button>
+                                                                    )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -878,9 +909,16 @@ const FileManagement = () => {
                                                         <h4 className="text-xs font-semibold text-amber-900 uppercase tracking-wider mb-0.5">Link an Inward Entry</h4>
                                                         <p className="text-xs text-amber-900/60">Attach an inward file to associate its documents here automatically.</p>
                                                     </div>
-                                                    <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => { setLinkInwardId("none"); setShowLinkInward(true); }}>
-                                                        <Link2 className="w-3.5 h-3.5 mr-1.5" /> Select Inward
-                                                    </Button>
+                                                    {((selected?.status === "PENDING" || selected?.status === "FORWARDED" || selected?.status === "RETURNED") && (
+                                                        (!selected.currentStage && selected.currentOwnerId === user?.id && user?.role !== 'DEPT_HEAD' && user?.role !== 'ADMIN') ||
+                                                        ((isApprover && selected.currentStage && selected.currentStage.role === user?.role) ||
+                                                            ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
+                                                        (selected.currentOwnerId === user?.id)
+                                                    )) && (
+                                                            <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => { setLinkInwardId("none"); setShowLinkInward(true); }}>
+                                                                <Link2 className="w-3.5 h-3.5 mr-1.5" /> Select Inward
+                                                            </Button>
+                                                        )}
                                                 </div>
                                             )}
 
@@ -989,7 +1027,18 @@ const FileManagement = () => {
                                                         <div className="flex items-center gap-2 flex-wrap">
                                                             {(() => {
                                                                 const fromName = m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System";
-                                                                const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "Ã¢â‚¬â€";
+                                                                const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "Ã¢â‚¬â€ ";
+
+                                                                const isAdhocInsert = m.remarks?.includes('[ADHOC_INSERT]');
+                                                                const isAdhocReturn = m.remarks?.includes('[ADHOC_RETURN]');
+
+                                                                if (isAdhocInsert) {
+                                                                    return <span className="text-xs font-medium">{fromName} added {toName}</span>;
+                                                                }
+
+                                                                if (isAdhocReturn) {
+                                                                    return <span className="text-xs font-medium">{fromName} (ad-hoc approver) forwarded the file to {toName}</span>;
+                                                                }
 
                                                                 if (m.action === 'CREATE') {
                                                                     return <span className="text-xs font-medium">{toName}</span>;
@@ -1012,7 +1061,7 @@ const FileManagement = () => {
                                                                     m.action === "REJECT" ? "bg-red-50 text-red-700" :
                                                                         "bg-blue-50 text-blue-700"}`}>{m.action}</span>
                                                         </div>
-                                                        {m.remarks && <p className="text-xs text-muted-foreground mt-0.5">{m.remarks}</p>}
+                                                        {m.remarks && m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim() && <p className="text-xs text-muted-foreground mt-0.5">{m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim()}</p>}
                                                         <p className="text-[10px] text-muted-foreground">{new Date(m.createdAt).toLocaleString()}</p>
                                                     </div>
                                                 </div>
@@ -1047,13 +1096,34 @@ const FileManagement = () => {
                                                         <div className="flex items-start justify-between gap-2 flex-wrap">
                                                             <div className="space-y-0.5">
                                                                 <div className="flex items-center gap-2 flex-wrap">
-                                                                    <span className="text-sm font-semibold">
-                                                                        {m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System"}
-                                                                    </span>
-                                                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                                                    <span className="text-sm text-muted-foreground">
-                                                                        {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "Ã¢â‚¬â€"}
-                                                                    </span>
+                                                                    {(() => {
+                                                                        const isAdhocInsert = m.remarks?.includes('[ADHOC_INSERT]');
+                                                                        const isAdhocReturn = m.remarks?.includes('[ADHOC_RETURN]');
+
+                                                                        if (isAdhocInsert) {
+                                                                            return <span className="text-sm font-semibold">{m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : 'System'} added {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : 'Ã¢â‚¬â€ '}</span>;
+                                                                        }
+
+                                                                        if (isAdhocReturn) {
+                                                                            return <span className="text-sm font-semibold">{m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : 'System'} (ad-hoc approver) forwarded the file to {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : 'Ã¢â‚¬â€ '}</span>;
+                                                                        }
+
+                                                                        if (m.action === 'CREATE') {
+                                                                            return <span className="text-sm font-semibold">{m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : 'Ã¢â‚¬â€ '}</span>;
+                                                                        }
+
+                                                                        return (
+                                                                            <>
+                                                                                <span className="text-sm font-semibold">
+                                                                                    {m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System"}
+                                                                                </span>
+                                                                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                                                                <span className="text-sm text-muted-foreground">
+                                                                                    {m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "Ã¢â‚¬â€ "}
+                                                                                </span>
+                                                                            </>
+                                                                        );
+                                                                    })()}
                                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${c.badge}`}>
                                                                         {m.action}
                                                                     </span>
@@ -1064,11 +1134,12 @@ const FileManagement = () => {
                                                             </div>
                                                             <span className="text-[11px] text-muted-foreground font-medium shrink-0">#{i + 1}</span>
                                                         </div>
-                                                        {/* Remarks body */}
-                                                        <div className="mt-3 border-t border-black/10 pt-3">
-                                                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Remarks</p>
-                                                            <p className="text-sm leading-relaxed">{m.remarks}</p>
-                                                        </div>
+                                                        {m.remarks && m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim() ? (
+                                                            <div className="mt-3 border-t border-black/10 pt-3">
+                                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Remarks</p>
+                                                                <p className="text-sm leading-relaxed">{m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim()}</p>
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                 );
                                             })}
@@ -1200,8 +1271,38 @@ const FileManagement = () => {
                             )}
                         {showAction === "forward" && (selected as any)?.classification?.type === "CUSTOM" && (
                             <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2.5">
-                                <span className="shrink-0 mt-0.5">Ã¢Å“â€¦</span>
+                                <span className="shrink-0 mt-0.5">✅</span>
                                 <span>This file uses the <strong>{(selected as any)?.classification?.name}</strong> predefined route. Approving it will automatically advance the file to the next person.</span>
+                            </div>
+                        )}
+                        {showAction === "forward" && (
+                            <div className="space-y-3 mt-2 p-3 bg-muted/30 rounded-md border border-border/60">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="accent-primary w-4 h-4 rounded cursor-pointer"
+                                        checked={isAdhocEnabled}
+                                        onChange={(e) => {
+                                            setIsAdhocEnabled(e.target.checked);
+                                            if (!e.target.checked) setActionForm(prev => ({ ...prev, adhocUserId: "" }));
+                                        }}
+                                    />
+                                    <span className="text-sm font-medium">Insert Ad-hoc Approver</span>
+                                </label>
+                                {isAdhocEnabled && (
+                                    <div className="space-y-2 pt-2 border-t mt-2">
+                                        <Label className="text-xs text-muted-foreground uppercase tracking-wider">Ad-hoc Approver *</Label>
+                                        <Select value={actionForm.adhocUserId} onValueChange={(v) => setActionForm({ ...actionForm, adhocUserId: v })}>
+                                            <SelectTrigger><SelectValue placeholder="Select temporary approver" /></SelectTrigger>
+                                            <SelectContent>
+                                                {users.filter(u => u.id !== user?.id).map(u => (
+                                                    <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-[11px] text-muted-foreground leading-tight">This person will review the file before it continues to its final destination.</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                         <div className="space-y-2">

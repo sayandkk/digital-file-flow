@@ -49,13 +49,24 @@ const WorkflowTracking = () => {
         if (!file || movements.length === 0) return;
         const rows = [
             ["Step", "Action", "From", "To", "Remarks", "Timestamp"],
-            ...movements.map((m, i) => [
-                String(i + 1), m.action,
-                m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System",
-                m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—",
-                m.remarks || "",
-                new Date(m.createdAt).toLocaleString(),
-            ]),
+            ...movements.map((m, i) => {
+                const isAdhocInsert = m.remarks?.includes('[ADHOC_INSERT]');
+                const isAdhocReturn = m.remarks?.includes('[ADHOC_RETURN]');
+                const fromName = m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System";
+                const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—";
+
+                let actionText: string = m.action;
+                if (isAdhocInsert) actionText = "AD-HOC INSERT";
+                if (isAdhocReturn) actionText = "AD-HOC RETURN";
+
+                return [
+                    String(i + 1), actionText,
+                    fromName,
+                    toName,
+                    m.remarks ? m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim() : "",
+                    new Date(m.createdAt).toLocaleString(),
+                ];
+            }),
         ];
         const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n");
         const blob = new Blob([csv], { type: "text/csv" });
@@ -155,12 +166,32 @@ const WorkflowTracking = () => {
                                                 <div className="flex items-center gap-2 flex-wrap mb-2">
                                                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${actionColors[m.action]}`}>{m.action}</span>
                                                     <div className="flex items-center gap-1 text-sm">
-                                                        <span className="font-medium">{m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System"}</span>
-                                                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                                        <span className="font-medium">{m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—"}</span>
+                                                        {(() => {
+                                                            const isAdhocInsert = m.remarks?.includes('[ADHOC_INSERT]');
+                                                            const isAdhocReturn = m.remarks?.includes('[ADHOC_RETURN]');
+                                                            const fromName = m.fromUser ? `${m.fromUser.firstName} ${m.fromUser.lastName}` : "System";
+                                                            const toName = m.toUser ? `${m.toUser.firstName} ${m.toUser.lastName}` : "—";
+
+                                                            if (isAdhocInsert) {
+                                                                return <span className="font-medium">{fromName} added {toName}</span>;
+                                                            }
+                                                            if (isAdhocReturn) {
+                                                                return <span className="font-medium">{fromName} (ad-hoc approver) forwarded the file to {toName}</span>;
+                                                            }
+                                                            if (m.action === 'CREATE') {
+                                                                return <span className="font-medium">{toName}</span>;
+                                                            }
+                                                            return (
+                                                                <>
+                                                                    <span className="font-medium">{fromName}</span>
+                                                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                                                    <span className="font-medium">{toName}</span>
+                                                                </>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </div>
-                                                {m.remarks && <p className="text-sm text-muted-foreground mb-1">"{m.remarks}"</p>}
+                                                {m.remarks && m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim() && <p className="text-sm text-muted-foreground mb-1">"{m.remarks.replace('[ADHOC_INSERT]', '').replace('[ADHOC_RETURN]', '').trim()}"</p>}
                                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                                     <Clock className="w-3 h-3" /> {new Date(m.createdAt).toLocaleString()}
                                                 </p>
