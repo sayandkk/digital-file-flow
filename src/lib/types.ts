@@ -136,6 +136,14 @@ export interface Note {
     createdAt: string;
     updatedAt: string;
 }
+export interface Notification {
+    id: string;
+    userId: string;
+    message: string;
+    fileId?: string;
+    isRead: boolean;
+    createdAt: string;
+}
 
 export interface Document {
     id: string;
@@ -156,43 +164,43 @@ export interface Document {
 }
 
 export type RequestStatus =
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'IN_REVIEW'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'ON_HOLD'
-  | 'COMPLETED'
-  | 'CANCELLED';
+    | 'DRAFT'
+    | 'SUBMITTED'
+    | 'IN_REVIEW'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'ON_HOLD'
+    | 'COMPLETED'
+    | 'CANCELLED';
 
 export type RequestType =
-  | 'IT_SUPPORT'
-  | 'PURCHASE_REQUEST'
-  | 'HR_REQUEST'
-  | 'LEAVE_REQUEST'
-  | 'LEGAL_CASE'
-  | 'CUSTOMER_COMPLAINT'
-  | 'PROJECT_PROPOSAL'
-  | 'INVOICE_APPROVAL'
-  | 'CONTRACT_REVIEW'
-  | 'GENERAL_REQUEST'
-  | 'OTHER';
+    | 'IT_SUPPORT'
+    | 'PURCHASE_REQUEST'
+    | 'HR_REQUEST'
+    | 'LEAVE_REQUEST'
+    | 'LEGAL_CASE'
+    | 'CUSTOMER_COMPLAINT'
+    | 'PROJECT_PROPOSAL'
+    | 'INVOICE_APPROVAL'
+    | 'CONTRACT_REVIEW'
+    | 'GENERAL_REQUEST'
+    | 'OTHER';
 
 export interface RequestRecord {
-  id: string;
-  requestNumber: string;
-  title: string;
-  description: string;
-  requestType: RequestType;
-  status: RequestStatus;
-  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' | 'CRITICAL';
-  confidentiality:
+    id: string;
+    requestNumber: string;
+    title: string;
+    description: string;
+    requestType: RequestType;
+    status: RequestStatus;
+    priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' | 'CRITICAL';
+    confidentiality:
     | 'PUBLIC'
     | 'INTERNAL'
     | 'CONFIDENTIAL'
     | 'RESTRICTED'
     | 'SECRET';
-  category:
+    category:
     | 'FINANCE'
     | 'HR'
     | 'LEGAL'
@@ -203,6 +211,6 @@ export interface RequestRecord {
     | 'CUSTOMER_SERVICE'
     | 'PROJECT'
     | 'OTHER';
-  createdAt: string;
-  createdBy?: User;
+    createdAt: string;
+    createdBy?: User;
 }
