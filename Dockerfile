@@ -9,8 +9,8 @@ RUN npm install
 COPY . .
 
 # API URL is relative so nginx can proxy it — see nginx.conf
-ARG VITE_API_BASE_URL=/api/v1
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_API_URL=/api/v1
+ENV VITE_API_URL=$VITE_API_URL
 
 RUN npm run build
 
