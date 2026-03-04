@@ -150,8 +150,8 @@ const FileManagement = () => {
                 fullFile = { ...fullFile, ...(fileRes.data?.data || fileRes.data) };
                 setSelected(fullFile);
 
-                if (fullFile.inwardId || fullFile.inward?.id) {
-                    const inwId = fullFile.inwardId || fullFile.inward?.id;
+                if ((fullFile as any).inwardId || (fullFile as any).inward?.id) {
+                    const inwId = (fullFile as any).inwardId || (fullFile as any).inward?.id;
                     documentsApi.findByInward(inwId).then(inwDocRes => {
                         setInwardDocuments(Array.isArray(inwDocRes.data) ? inwDocRes.data : []);
                     }).catch(() => setInwardDocuments([]));
@@ -815,7 +815,7 @@ const FileManagement = () => {
                                     </div>
                                 )}
 
-                                {selected?.inward && (
+                                {(selected as any)?.inward && (
                                     <div className="space-y-3 mt-4 p-4 bg-amber-50/50 border border-amber-200 rounded-lg">
                                         <div className="flex items-center gap-2 mb-2">
                                             <Paperclip className="w-4 h-4 text-amber-600" />
@@ -824,19 +824,19 @@ const FileManagement = () => {
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Inward No</p>
-                                                <p className="font-medium text-amber-950">{selected.inward.inwardNumber}</p>
+                                                <p className="font-medium text-amber-950">{(selected as any).inward.inwardNumber}</p>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Sender</p>
-                                                <p className="font-medium text-amber-950">{selected.inward.senderName}</p>
+                                                <p className="font-medium text-amber-950">{(selected as any).inward.senderName}</p>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Received Date</p>
-                                                <p className="font-medium text-amber-950">{new Date(selected.inward.receivedDate).toLocaleDateString()}</p>
+                                                <p className="font-medium text-amber-950">{new Date((selected as any).inward.receivedDate).toLocaleDateString()}</p>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Subject</p>
-                                                <p className="font-medium text-amber-950 truncate" title={selected.inward.subject}>{selected.inward.subject}</p>
+                                                <p className="font-medium text-amber-950 truncate" title={(selected as any).inward.subject}>{(selected as any).inward.subject}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -1041,7 +1041,7 @@ const FileManagement = () => {
                                                             ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
                                                         (selected.currentOwnerId === user?.id)
                                                     )) && (
-                                                            <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => { setLinkInwardId("none"); setShowLinkInward(true); }}>
+                                                            <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => setShowLinkInward(true)}>
                                                                 <Link2 className="w-3.5 h-3.5 mr-1.5" /> Select Inward
                                                             </Button>
                                                         )}
