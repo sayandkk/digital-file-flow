@@ -43,6 +43,8 @@ const InwardManagement = () => {
     const [uploadHeading, setUploadHeading] = useState("");
     const [isNewHeading, setIsNewHeading] = useState(false);
 
+    const user = JSON.parse(localStorage.getItem("dms_user") || "{}");
+
     const fetchInwards = async () => {
         setLoading(true);
         try {
@@ -125,8 +127,17 @@ const InwardManagement = () => {
         e.preventDefault();
         setSubmitting(true);
         setError("");
+
+        const payload = {
+            subject: form.subject,
+            senderName: form.source,
+            inwardType: form.type,
+            description: form.description,
+            departmentId: user.departmentId || user.department?.id,
+        };
+
         try {
-            await inwardApi.create(form);
+            await inwardApi.create(payload);
             setShowForm(false);
             setForm({ subject: "", source: "", type: "LETTER", priority: "NORMAL", description: "" });
             fetchInwards();
@@ -217,7 +228,7 @@ const InwardManagement = () => {
                                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${priorityColors[item.priority]}`}>
                                             {item.priority}
                                         </span>
-                                        {item.fileId && <Link2 className="w-4 h-4 text-success" title="Linked to file" />}
+                                        {item.fileId && <Link2 className="w-4 h-4 text-success" />}
                                         <span className="text-xs text-muted-foreground hidden sm:block">
                                             {new Date(item.createdAt).toLocaleDateString()}
                                         </span>

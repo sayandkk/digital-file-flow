@@ -59,6 +59,7 @@ export const filesApi = {
     reject: (id: string, data: any) => api.post(`/files/${id}/reject`, data),
     close: (id: string, data: any) => api.post(`/files/${id}/close`, data),
     getMovements: (id: string) => api.get(`/files/${id}/movements`),
+    update: (id: string, data: any) => api.patch(`/files/${id}`, data),
 };
 
 // ── Requests ─────────────────────────────────────────────────────────────────-
@@ -73,10 +74,10 @@ export const requestsApi = {
 
 // ── Inward ────────────────────────────────────────────────────────────────────
 export const inwardApi = {
-    list: (params?: any) => api.get('/inward', { params }),
-    get: (id: string) => api.get(`/inward/${id}`),
-    create: (data: any) => api.post('/inward', data),
-    linkToFile: (id: string, fileId: string) => api.patch(`/inward/${id}/link-file`, { fileId }),
+    list: (params?: any) => api.get('/inwards', { params }),
+    get: (id: string) => api.get(`/inwards/${id}`),
+    create: (data: any) => api.post('/inwards', data),
+    linkToFile: (id: string, fileId: string) => api.patch(`/inwards/${id}/link-file`, { fileId }),
 };
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
@@ -127,6 +128,7 @@ export const usersApi = {
     update: (id: string, data: any) => api.patch(`/users/${id}`, data),
     deactivate: (id: string) => api.patch(`/users/${id}/status`, { status: 'INACTIVE' }),
     reactivate: (id: string) => api.patch(`/users/${id}/status`, { status: 'ACTIVE' }),
+    delete: (id: string) => api.delete(`/users/${id}`),
 };
 
 // ── Departments ───────────────────────────────────────────────────────────────
@@ -134,6 +136,7 @@ export const departmentsApi = {
     list: () => api.get('/departments'),
     create: (data: any) => api.post('/departments', data),
     update: (id: string, data: any) => api.patch(`/departments/${id}`, data),
+    delete: (id: string) => api.delete(`/departments/${id}`),
 };
 
 // ── Workflow ──────────────────────────────────────────────────────────────────
