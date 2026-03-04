@@ -10,7 +10,7 @@ import {
     FileText, Upload, Search, RefreshCw, Download, Trash2,
     Eye, AlertCircle, Tag, File, CheckSquare, Square
 } from "lucide-react";
-import { documentsApi, filesApi } from "@/lib/api";
+import { documentsApi, filesApi, API_BASE_URL } from "@/lib/api";
 import type { Document, FileRecord } from "@/lib/types";
 
 const formatBytes = (bytes: number) => {
@@ -250,7 +250,7 @@ const DocumentManagement = () => {
                     <div className="flex-1 min-h-0">
                         {viewing && (
                             <iframe
-                                src={`http://localhost:3001/api/v1/documents/${viewing.id}/download`}
+                                src={`${API_BASE_URL}/documents/${viewing.id}/download`}
                                 className="w-full h-full rounded-md border"
                                 title={viewing.originalName}
                             />
