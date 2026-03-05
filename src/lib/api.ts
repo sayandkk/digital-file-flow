@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+// In Docker: VITE_API_URL=/api/v1 (nginx proxies to backend container)
+// In local dev: falls back to http://localhost:3001/api/v1
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 export const api = axios.create({
@@ -166,3 +168,12 @@ export const classificationsApi = {
     setRoutes: (id: string, routes: { userId: string; order: number }[]) =>
         api.post(`/classifications/${id}/routes`, { routes }),
 };
+
+// ── Notifications ──────────────────────────────────────────────────────────────
+export const notificationsApi = {
+    list: () => api.get('/notifications'),
+    markRead: (id: string) => api.patch(`/notifications/${id}/read`, {}),
+    markAllRead: () => api.patch('/notifications/read-all', {}),
+    dismiss: (id: string) => api.delete(`/notifications/${id}`),
+};
+

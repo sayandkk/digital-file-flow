@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FolderOpen, Plus, RefreshCw, AlertCircle, ChevronRight, Edit } from "lucide-react";
+import { FolderOpen, Plus, RefreshCw, AlertCircle, ChevronRight, Edit, Download } from "lucide-react";
+import { jsPDF } from 'jspdf';
 import { toast } from "sonner";
 import type { FileRecord as File } from "@/lib/types";
 
@@ -138,6 +139,99 @@ export default function MasterFiles() {
         setShowCreate(true);
     };
 
+    const downloadClosureFile = async (file: File | any) => {
+        try {
+            let fullMaster = file;
+            if (!fullMaster.children || fullMaster.children.length === 0) {
+                const res = await filesApi.get(fullMaster.id).catch(() => ({ data: null }));
+                if (res.data) fullMaster = { ...(res.data.data || res.data), ...fullMaster };
+            }
+
+            // Fetch full details for children if needed
+            const children = Array.isArray(fullMaster.children) ? fullMaster.children : [];
+            const childDetails = await Promise.all(children.map(async (c: any) => {
+                if (c.approvals && c.approvals.length > 0 && c.createdAt) return c;
+                const r = await filesApi.get(c.id).catch(() => ({ data: null }));
+                return r.data ? (r.data.data || r.data) : c;
+            }));
+
+            const header = `Closure Notice\n\nMaster File: ${fullMaster.fileNumber || fullMaster.id} - ${fullMaster.subject || ''}\nStatus: ${fullMaster.status}\nCreated: ${fullMaster.createdAt ? new Date(fullMaster.createdAt).toLocaleString() : '—'}\n\n`;
+
+            let body = 'Sub-files:\n';
+            if (childDetails.length === 0) body += 'None\n\n';
+            else {
+                for (let i = 0; i < childDetails.length; i++) {
+                    const c = childDetails[i];
+                    body += `${i + 1}. ${c.fileNumber || c.id} - ${c.subject || ''} — Status: ${c.status}\n`;
+
+                    // Prefer workflow approvals if present
+                    if (c.approvals && c.approvals.length > 0) {
+                        c.approvals.forEach((a: any) => {
+                            if (a.status === 'APPROVED') {
+                                const who = a.approvedBy ? `${a.approvedBy.firstName || ''} ${a.approvedBy.lastName || ''}`.trim() : (a.approvedByUserId || '—');
+                                const when = a.actionDate ? new Date(a.actionDate).toLocaleString() : (a.createdAt ? new Date(a.createdAt).toLocaleString() : '—');
+                                body += `    - Approved by: ${who} at ${when}\n`;
+                            }
+                        });
+                    } else {
+                        // Fallback: use movement logs for approvals
+                        const movRes = await filesApi.getMovements(c.id).catch(() => ({ data: [] }));
+                        const moves = movRes.data || [];
+                        const approveMoves = (moves as any[]).filter(m => m.action === 'APPROVE');
+                        if (approveMoves.length > 0) {
+                            approveMoves.forEach((m: any) => {
+                                const who = m.fromUser ? `${m.fromUser.firstName || ''} ${m.fromUser.lastName || ''}`.trim() : (m.toUser ? `${m.toUser.firstName || ''} ${m.toUser.lastName || ''}`.trim() : '—');
+                                const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '—';
+                                body += `    - Approved by: ${who} at ${when} — Remarks: ${m.remarks || '—'}\n`;
+                            });
+                        } else {
+                            body += `    - No approval records\n`;
+                        }
+                    }
+
+                    body += '\n';
+                }
+            }
+
+            const content = `${header}${body}This document certifies that the master file and the listed sub-files have been reviewed and their approval status recorded.`;
+
+            // Generate PDF using jsPDF
+            try {
+                const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+                const margin = 40;
+                let y = 40;
+                const lineHeight = 14;
+
+                const writeText = (text: string) => {
+                    const lines = doc.splitTextToSize(text, 595 - margin * 2);
+                    lines.forEach((ln) => {
+                        if (y > 820) { doc.addPage(); y = 40; }
+                        doc.text(ln, margin, y);
+                        y += lineHeight;
+                    });
+                };
+
+                doc.setFontSize(16);
+                doc.text('Closure Notice (Master File)', margin, y);
+                y += lineHeight * 1.5;
+                doc.setFontSize(11);
+                writeText(content);
+                doc.save(`${fullMaster.fileNumber || fullMaster.id}-closure.pdf`);
+            } catch (e) {
+                console.error('PDF generation failed, falling back to text download', e);
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `${fullMaster.fileNumber || fullMaster.id}-closure.txt`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            }
+        } catch (e) { console.error('Failed to generate closure file', e); }
+    };
+
     return (
         <div className="space-y-6 max-w-[1200px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -227,6 +321,16 @@ export default function MasterFiles() {
                                                     <Edit className="w-4 h-4 mr-1" /> Edit
                                                 </Button>
                                             )}
+                                                {file.status === 'APPROVED' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                                                        onClick={(e) => { e.stopPropagation(); downloadClosureFile(file); }}
+                                                    >
+                                                        <Download className="w-4 h-4 mr-1" /> Closure
+                                                    </Button>
+                                                )}
                                             <div className="flex items-center text-muted-foreground ml-2">
                                                 <span className="text-xs mr-1">Open File</span>
                                                 <ChevronRight className="w-4 h-4" />

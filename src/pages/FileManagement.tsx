@@ -17,6 +17,7 @@ import {
     FileText, Upload, Download, Trash2, Paperclip, Link2
 } from "lucide-react";
 import { filesApi, departmentsApi, usersApi, workflowApi, documentsApi, classificationsApi, inwardApi } from "@/lib/api";
+import { jsPDF } from 'jspdf';
 import { useAuth } from "@/hooks/useAuth";
 import type { FileRecord, FileStatus, FileMovement, Department, User, WorkflowCategory, Document, Priority, Inward } from "@/lib/types";
 
@@ -149,8 +150,8 @@ const FileManagement = () => {
                 fullFile = { ...fullFile, ...(fileRes.data?.data || fileRes.data) };
                 setSelected(fullFile);
 
-                if (fullFile.inwardId || fullFile.inward?.id) {
-                    const inwId = fullFile.inwardId || fullFile.inward?.id;
+                if ((fullFile as any).inwardId || (fullFile as any).inward?.id) {
+                    const inwId = (fullFile as any).inwardId || (fullFile as any).inward?.id;
                     documentsApi.findByInward(inwId).then(inwDocRes => {
                         setInwardDocuments(Array.isArray(inwDocRes.data) ? inwDocRes.data : []);
                     }).catch(() => setInwardDocuments([]));
@@ -249,6 +250,10 @@ const FileManagement = () => {
 
 
             toast.success(`File ${showAction === 'return' ? 'returned' : showAction + 'd'} successfully`);
+            // If this was an approval action, generate a local closure notice for download
+            if (showAction === 'approve' && selected) {
+                setTimeout(() => downloadClosureFile(selected), 250);
+            }
             setShowAction(null);
             setActionForm({ toUserId: "", remarks: "", adhocUserId: "" });
             setIsAdhocEnabled(false);
@@ -385,6 +390,84 @@ const FileManagement = () => {
         } catch {
             toast.error("Failed to open document");
         }
+    };
+
+    const downloadClosureFile = async (file: FileRecord | any) => {
+        try {
+            let fullFile = file;
+            if (!fullFile.approvals || fullFile.approvals.length === 0 || !fullFile.createdAt) {
+                const res = await filesApi.get(fullFile.id).catch(() => ({ data: null }));
+                if (res.data) fullFile = { ...(res.data.data || res.data), ...fullFile };
+            }
+
+            const header = `Closure Notice\n\nFile: ${fullFile.fileNumber || fullFile.id} - ${fullFile.subject || ''}\nStatus: ${fullFile.status}\nCreated: ${fullFile.createdAt ? new Date(fullFile.createdAt).toLocaleString() : '—'}\n\n`;
+
+            let approvalsText = '';
+            if (fullFile.approvals && fullFile.approvals.length > 0) {
+                approvalsText += 'Approvals:\n';
+                fullFile.approvals.forEach((a: any, idx: number) => {
+                    const who = a.approvedBy ? `${a.approvedBy.firstName || ''} ${a.approvedBy.lastName || ''}`.trim() : (a.approvedByUserId || '—');
+                    const when = a.actionDate ? new Date(a.actionDate).toLocaleString() : (a.createdAt ? new Date(a.createdAt).toLocaleString() : '—');
+                    approvalsText += `${idx + 1}. Stage: ${(a.stage?.stageOrder ?? a.stageId) || '—'} (${a.stage?.role || '—'}) — Status: ${a.status} — By: ${who} — At: ${when}`;
+                    if (a.comments) approvalsText += ` — Comments: ${a.comments}`;
+                    approvalsText += '\n';
+                });
+                approvalsText += '\n';
+            } else {
+                // Fallback: check file movements for APPROVE actions (used by simple approve endpoint)
+                const movRes = await filesApi.getMovements(fullFile.id).catch(() => ({ data: [] }));
+                const moves = movRes.data || [];
+                const approveMoves = (moves as any[]).filter(m => m.action === 'APPROVE');
+                if (approveMoves.length > 0) {
+                    approvalsText += 'Approvals (from movement log):\n';
+                    approveMoves.forEach((m: any, i: number) => {
+                        const who = m.fromUser ? `${m.fromUser.firstName || ''} ${m.fromUser.lastName || ''}`.trim() : (m.toUser ? `${m.toUser.firstName || ''} ${m.toUser.lastName || ''}`.trim() : '—');
+                        const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '—';
+                        approvalsText += `${i + 1}. By: ${who} — At: ${when} — Remarks: ${m.remarks || '—'}\n`;
+                    });
+                    approvalsText += '\n';
+                } else {
+                    approvalsText += 'Approvals: — No approval history available\n\n';
+                }
+            }
+
+            const content = `${header}${approvalsText}This document certifies that the above file has been approved in the Document Management System.`;
+
+            // Generate PDF using jsPDF
+            try {
+                const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+                const margin = 40;
+                let y = 40;
+                const lineHeight = 14;
+
+                const writeText = (text: string) => {
+                    const lines = doc.splitTextToSize(text, 595 - margin * 2);
+                    lines.forEach((ln) => {
+                        if (y > 820) { doc.addPage(); y = 40; }
+                        doc.text(ln, margin, y);
+                        y += lineHeight;
+                    });
+                };
+
+                doc.setFontSize(16);
+                doc.text('Closure Notice', margin, y);
+                y += lineHeight * 1.5;
+                doc.setFontSize(11);
+                writeText(content);
+                doc.save(`${fullFile.fileNumber || fullFile.id}-closure.pdf`);
+            } catch (e) {
+                console.error('PDF generation failed, falling back to text download', e);
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `${fullFile.fileNumber || fullFile.id}-closure.txt`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            }
+        } catch (e) { console.error('Failed to generate closure file', e); }
     };
 
     const handleDeleteDocument = async (id: string) => {
@@ -576,7 +659,11 @@ const FileManagement = () => {
                                                     {(file as any).isMaster && <Badge variant="default" className="text-[10px] h-5 bg-indigo-500 hover:bg-indigo-600">Master File</Badge>}
                                                 </div>
                                                 <p className="text-xs text-muted-foreground">
-                                                    {file.fileNumber} Ã‚Â· {file.department?.name || "Ã¢â‚¬â€"}
+                                                    {file.fileNumber} · {file.department?.name || "—"}
+
+
+
+
                                                 </p>
                                             </div>
                                         </div>
@@ -597,6 +684,17 @@ const FileManagement = () => {
                                         <span className="text-xs text-muted-foreground hidden sm:block">
                                             {new Date(file.createdAt).toLocaleDateString()}
                                         </span>
+                                        {file.status === 'APPROVED' && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground"
+                                                onClick={(e) => { e.stopPropagation(); downloadClosureFile(file); }}
+                                                title="Download closure"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                            </Button>
+                                        )}
                                         <ChevronRight className="w-4 h-4 text-muted-foreground" />
                                     </div>
                                 </div>
@@ -675,7 +773,17 @@ const FileManagement = () => {
                             <TabsContent value="overview" className="mt-0 space-y-6">
                                 {/* Metadata */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-                                    <div className="space-y-1"><p className="text-muted-foreground text-xs">Status</p>{selected && <StatusBadge file={selected} />}</div>
+                                    <div className="space-y-1">
+                                        <p className="text-muted-foreground text-xs">Status</p>
+                                        <div className="flex items-center gap-2">
+                                            {selected && <StatusBadge file={selected} />}
+                                            {selected?.status === 'APPROVED' && (
+                                                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => downloadClosureFile(selected)}>
+                                                    <Download className="w-4 h-4 mr-2" /> Closure
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{selected?.department?.name}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Created By</p><p className="font-medium">{selected?.createdBy?.firstName} {selected?.createdBy?.lastName}</p></div>
                                     <div className="space-y-1"><p className="text-muted-foreground text-xs">Current Owner</p><p className="font-medium">{selected?.currentOwner?.firstName || "Ã¢â‚¬â€"} {selected?.currentOwner?.lastName}</p></div>
@@ -707,7 +815,7 @@ const FileManagement = () => {
                                     </div>
                                 )}
 
-                                {selected?.inward && (
+                                {(selected as any)?.inward && (
                                     <div className="space-y-3 mt-4 p-4 bg-amber-50/50 border border-amber-200 rounded-lg">
                                         <div className="flex items-center gap-2 mb-2">
                                             <Paperclip className="w-4 h-4 text-amber-600" />
@@ -716,19 +824,19 @@ const FileManagement = () => {
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Inward No</p>
-                                                <p className="font-medium text-amber-950">{selected.inward.inwardNumber}</p>
+                                                <p className="font-medium text-amber-950">{(selected as any).inward.inwardNumber}</p>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Sender</p>
-                                                <p className="font-medium text-amber-950">{selected.inward.senderName}</p>
+                                                <p className="font-medium text-amber-950">{(selected as any).inward.senderName}</p>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Received Date</p>
-                                                <p className="font-medium text-amber-950">{new Date(selected.inward.receivedDate).toLocaleDateString()}</p>
+                                                <p className="font-medium text-amber-950">{new Date((selected as any).inward.receivedDate).toLocaleDateString()}</p>
                                             </div>
                                             <div>
                                                 <p className="text-muted-foreground text-[11px] uppercase tracking-wider font-semibold mb-1">Subject</p>
-                                                <p className="font-medium text-amber-950 truncate" title={selected.inward.subject}>{selected.inward.subject}</p>
+                                                <p className="font-medium text-amber-950 truncate" title={(selected as any).inward.subject}>{(selected as any).inward.subject}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -746,6 +854,13 @@ const FileManagement = () => {
                                 {selected && (selected as any).isMaster && (selected as any).children && ((selected as any).children.length > 0) && (
                                     <div className="space-y-2 mt-4">
                                         <Label>Sub-Files</Label>
+                                        {(() => {
+                                            const children = (selected as any).children || [];
+                                            const approvedCount = children.filter((c: any) => c.status === 'APPROVED').length;
+                                            return (
+                                                <p className="text-xs text-muted-foreground">{approvedCount} of {children.length} sub-files fully approved{approvedCount === children.length ? ' — Master contains all approved files' : ''}.</p>
+                                            );
+                                        })()}
                                         <div className="space-y-2 bg-muted/20 p-3 rounded-md border">
                                             {(selected as any).children.map((child: any) => (
                                                 <div
@@ -759,6 +874,17 @@ const FileManagement = () => {
                                                             child.status === 'CLOSED' ? 'bg-slate-100 text-slate-700' :
                                                                 'bg-yellow-100 text-yellow-700'
                                                             }`}>{child.status}</span>
+                                                        {child.status === 'APPROVED' && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-7 w-7 text-muted-foreground"
+                                                                onClick={(e) => { e.stopPropagation(); downloadClosureFile(child); }}
+                                                                title="Download closure"
+                                                            >
+                                                                <Download className="w-4 h-4" />
+                                                            </Button>
+                                                        )}
                                                         <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                                     </div>
                                                 </div>
@@ -915,7 +1041,7 @@ const FileManagement = () => {
                                                             ((user?.role === 'DEPT_HEAD' || user?.role === 'ADMIN') && (selected.currentOwnerId === user?.id || selected.departmentId === user?.departmentId))) ||
                                                         (selected.currentOwnerId === user?.id)
                                                     )) && (
-                                                            <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => { setLinkInwardId("none"); setShowLinkInward(true); }}>
+                                                            <Button variant="outline" size="sm" className="border-amber-200 text-amber-900 hover:bg-amber-100/50" onClick={() => setShowLinkInward(true)}>
                                                                 <Link2 className="w-3.5 h-3.5 mr-1.5" /> Select Inward
                                                             </Button>
                                                         )}
@@ -1354,6 +1480,43 @@ const FileManagement = () => {
                     </form>
                 </DialogContent>
             </Dialog >
+
+            {/* Pull File Action Dialog */}
+            <Dialog open={showPullAction} onOpenChange={setShowPullAction}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader><DialogTitle>Reassign {selectedPullFiles.length} File(s)</DialogTitle></DialogHeader>
+                    <form onSubmit={handlePullFiles} className="space-y-4">
+                        {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+                        <div className="space-y-2">
+                            <Label>Assign To *</Label>
+                            <Select value={actionForm.toUserId} onValueChange={(v) => setActionForm({ ...actionForm, toUserId: v })}>
+                                <SelectTrigger><SelectValue placeholder="Select user in your department" /></SelectTrigger>
+                                <SelectContent>
+                                    {users.filter(u => {
+                                        // Must be in the same department, not the current logged in user (dept head)
+                                        if (u.id === user?.id) return false;
+                                        if (u.departmentId !== user?.department?.id && u.department?.id !== user?.department?.id) return false;
+
+                                        // Must not be the current owner of any of the selected pull files
+                                        const isCurrentOwner = files.some(f => selectedPullFiles.includes(f.id) && f.currentOwnerId === u.id);
+                                        return !isCurrentOwner;
+                                    }).map(u => (
+                                        <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.role})</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Remarks</Label>
+                            <Textarea value={actionForm.remarks} onChange={(e) => setActionForm({ ...actionForm, remarks: e.target.value })} placeholder="Add standard remarks (e.g. Previous assignee on leave)..." rows={3} />
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" type="button" onClick={() => setShowPullAction(false)}>Cancel</Button>
+                            <Button type="submit" disabled={submitting}>{submitting ? "Processing..." : "Reassign Files"}</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
 
             {/* Upload Document Dialog */}
             < Dialog open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) { setUploadForm({ file: null, description: "", heading: "" }); setError(""); setIsNewHeading(false); } }}>

@@ -1,4 +1,4 @@
-import { Bell, Search, User } from "lucide-react";
+import { Bell, Search, User, CheckCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useNotifications } from "@/context/NotificationContext";
-import { formatDistanceToNow } from "date-fns";
+import { useNotifications } from "@/hooks/useNotifications";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const DashboardHeader = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("dms_user") || '{"email":"user@gov","role":"officer"}');
-  const { notifications, unreadCount, isConnected, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, unreadCount, connected, markAllRead, markRead, refresh } = useNotifications();
 
   const roleLabels: Record<string, string> = {
     admin: "Administrator",
@@ -40,52 +40,86 @@ const DashboardHeader = () => {
 
       <div className="flex items-center gap-3">
         {/* Notifications */}
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => { if (open) refresh(); }}>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5 text-muted-foreground" />
+              <Bell className={`w-5 h-5 ${connected ? 'text-foreground' : 'text-muted-foreground'}`} />
+              {/* Connection status dot */}
+              <span
+                className={`absolute bottom-0.5 right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${
+                  connected ? 'bg-green-500' : 'bg-red-500'
+                }`}
+                title={connected ? 'Notifications connected' : 'Notifications disconnected'}
+              />
+              {/* Unread badge */}
               {unreadCount > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
-              {/* Connection Status Indicator */}
-              <span
-                className={`absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border-2 border-background ${isConnected ? "bg-green-500" : "bg-red-500"
-                  }`}
-                title={isConnected ? "WebSocket Connected" : "WebSocket Disconnected"}
-              />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-4 py-2 border-b">
-              <span className="font-medium">Notifications</span>
-              {unreadCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={markAllAsRead} className="h-auto p-0 text-xs text-muted-foreground hover:text-primary">
-                  Mark all as read
-                </Button>
-              )}
-            </div>
+          <DropdownMenuContent align="end" className="w-80">
+            <DropdownMenuLabel className="flex items-center justify-between">
+              <span>Notifications</span>
+              <div className="flex items-center gap-2">
+                <span className={`flex items-center gap-1 text-[10px] font-normal ${
+                  connected ? 'text-green-500' : 'text-red-500'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    connected ? 'bg-green-500' : 'bg-red-500'
+                  }`} />
+                  {connected ? 'Live' : 'Offline'}
+                </span>
+                {unreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={markAllRead}
+                  >
+                    <CheckCheck className="w-3 h-3 mr-1" />
+                    Mark all read
+                  </Button>
+                )}
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
             {notifications.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground text-sm">
-                No notifications yet.
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No notifications yet
               </div>
             ) : (
-              notifications.map((notification) => (
-                <DropdownMenuItem
-                  key={notification.id}
-                  className={`flex flex-col items-start gap-1 p-3 cursor-pointer ${!notification.isRead ? "bg-muted/50 font-medium" : ""
-                    }`}
-                  onClick={() => markAsRead(notification.id)}
-                >
-                  <span className="text-sm line-clamp-2">{notification.message}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(notification.createdAt), {
-                      addSuffix: true,
-                    })}
-                  </span>
-                </DropdownMenuItem>
-              ))
+              <ScrollArea className="max-h-80">
+                {notifications.map((n) => (
+                  <DropdownMenuItem
+                    key={n.id}
+                    className={`flex flex-col items-start gap-0.5 px-3 py-2 cursor-pointer ${!n.read ? "bg-muted/50" : ""}`}
+                    onClick={() => {
+                      markRead(n.id);
+                      // Navigate to the relevant entity
+                      if (n.entityType === 'file' && n.entityId) {
+                        navigate('/dashboard/files', { state: { selectedFileId: n.entityId } });
+                      } else if (n.entityType === 'request' && n.entityId) {
+                        navigate('/dashboard/requests', { state: { selectedRequestId: n.entityId } });
+                      } else if (n.link) {
+                        navigate(n.link);
+                      }
+                    }}
+                  >
+                    <span className="font-medium text-sm leading-tight">{n.title}</span>
+                    <span className="text-xs text-muted-foreground leading-tight whitespace-normal">{n.message}</span>
+                    <div className="flex items-center justify-between w-full mt-0.5">
+                      <span className="text-[10px] text-muted-foreground/60">
+                        {new Date(n.timestamp).toLocaleString()}
+                      </span>
+                      {(n.entityType === 'file' || n.entityType === 'request' || n.link) && (
+                        <span className="text-[10px] text-primary/70 font-medium">View →</span>
+                      )}
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              </ScrollArea>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
